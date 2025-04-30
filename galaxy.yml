@@ -1,0 +1,32 @@
+namespace: hperezrodal
+
+name: compose-publisher
+
+version: 1.0.0
+
+readme: README.md
+
+authors:
+- hperezrodal <hperezrodal@gmail.com>
+
+description: your collection description
+
+license:
+- GPL-2.0-or-later
+
+license_file: ''
+
+tags: []
+
+dependencies: {}
+
+repository: https://github.com/hperezrodal/compose-publisher
+
+documentation: https://github.com/hperezrodal/compose-publisher.git/README.md
+
+homepage: https://github.com/hperezrodal/compose-publisher
+
+issues: https://github.com/hperezrodal/compose-publisher/issues
+
+build_ignore: []
+
