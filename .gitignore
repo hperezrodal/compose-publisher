@@ -1,3 +1,18 @@
+# Build artifacts
 *.tar.gz
-notes.md
-old
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+
+# Internal docs (not published)
+docs/
+
+# Editor
+.idea/
+.vscode/
+*.swp

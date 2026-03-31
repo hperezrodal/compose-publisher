@@ -1,0 +1,44 @@
+# Example: Monorepo with multiple services in one repository
+# All source paths are relative to the project root
+
+environments:
+  dev:
+    host: 10.0.0.10
+    user: root
+    ssh_key: ~/.ssh/id_deploy
+    branch: develop
+    env_file: .env.dev
+    compose_files:
+      - docker-compose.yml
+
+  prod:
+    host: 10.0.0.20
+    user: root
+    ssh_key: ~/.ssh/id_deploy
+    branch: main
+    env_file: .env.prod
+    compose_files:
+      - docker-compose.yml
+      - docker-compose.prod.yml
+
+components:
+  backend:
+    source: ./backend
+    dockerfile: Dockerfile
+    target: production
+    compose_service: backend
+    stack: apps
+
+  frontend:
+    source: ./frontend
+    dockerfile: Dockerfile
+    target: runner
+    compose_service: frontend
+    stack: apps
+
+  worker:
+    source: ./backend
+    dockerfile: Dockerfile.worker
+    target: production
+    compose_service: worker
+    stack: apps

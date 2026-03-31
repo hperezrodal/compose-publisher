@@ -1,0 +1,63 @@
+# Example: Project with Traefik HTTPS proxy
+#
+# Setup flow:
+#   1. compose-publisher setup --env prod
+#      → installs Docker, registry, proxy network, etc.
+#   2. Copy templates/proxy/ to your project's deployment/proxy/
+#      → edit .env with your ACME_EMAIL
+#   3. compose-publisher deploy proxy --env prod
+#      → Traefik is running with auto HTTPS
+#   4. compose-publisher deploy backend --env prod
+#      → backend is accessible at https://api.example.com
+#
+# Your app's docker-compose.yml needs Traefik labels:
+#
+#   services:
+#     backend:
+#       image: localhost:5000/backend:latest
+#       labels:
+#         - traefik.enable=true
+#         - traefik.http.routers.backend.rule=Host(`api.example.com`)
+#         - traefik.http.routers.backend.entrypoints=websecure
+#         - traefik.http.routers.backend.tls.certresolver=letsencrypt
+#         - traefik.http.services.backend.loadbalancer.server.port=3000
+#       networks:
+#         - proxy
+#         - default
+#
+#   networks:
+#     proxy:
+#       external: true
+
+environments:
+  prod:
+    host: 10.0.0.20
+    user: root
+    ssh_key: ~/.ssh/id_deploy
+    branch: main
+    env_file: deployment/prod/.env
+    compose_files:
+      - deployment/prod/docker-compose.yml
+    deploy_path: ~/deployment
+
+components:
+  # Traefik proxy (deployed once, rarely updated)
+  proxy:
+    source: ./deployment/proxy
+    compose_service: traefik
+    stack: proxy
+
+  # App services (deployed on every push)
+  backend:
+    source: ./backend
+    dockerfile: Dockerfile
+    target: production
+    compose_service: backend
+    stack: apps
+
+  frontend:
+    source: ./frontend
+    dockerfile: Dockerfile
+    target: runner
+    compose_service: frontend
+    stack: apps

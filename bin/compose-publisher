@@ -1,0 +1,343 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ─── Version ───────────────────────────────────────────────
+CP_VERSION="0.1.0"
+
+# ─── Resolve install paths ─────────────────────────────────
+# When running from repo: bin/compose-publisher → lib/ is at ../lib/
+# When installed: /usr/local/bin/compose-publisher → lib/ is at /usr/local/lib/compose-publisher/
+CP_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -d "${CP_SCRIPT_DIR}/../lib" && -f "${CP_SCRIPT_DIR}/../lib/config.sh" ]]; then
+    CP_LIB_DIR="${CP_SCRIPT_DIR}/../lib"
+else
+    CP_LIB_DIR="/usr/local/lib/compose-publisher"
+fi
+
+# ─── Pre-flight: bash-library ──────────────────────────────
+if [[ -n "${BASH_LIBRARY_PATH:-}" && -f "${BASH_LIBRARY_PATH}/lib-loader.sh" ]]; then
+    source "${BASH_LIBRARY_PATH}/lib-loader.sh"
+elif [[ -f "/usr/local/lib/bash-library/lib-loader.sh" ]]; then
+    source "/usr/local/lib/bash-library/lib-loader.sh"
+elif [[ -f "${HOME}/.local/lib/bash-library/lib-loader.sh" ]]; then
+    source "${HOME}/.local/lib/bash-library/lib-loader.sh"
+else
+    echo "ERROR: bash-library not found."
+    echo "Install: https://github.com/hperezrodal/bash-library"
+    exit 1
+fi
+
+# ─── Pre-flight: yq ───────────────────────────────────────
+if ! command -v yq &> /dev/null; then
+    lib_log_error "yq not found. Install: https://github.com/mikefarah/yq"
+    exit 1
+fi
+
+# ─── Source lib modules ────────────────────────────────────
+source "${CP_LIB_DIR}/config.sh"
+source "${CP_LIB_DIR}/build.sh"
+source "${CP_LIB_DIR}/transfer.sh"
+source "${CP_LIB_DIR}/deploy.sh"
+source "${CP_LIB_DIR}/setup.sh"
+source "${CP_LIB_DIR}/env.sh"
+
+# ─── Help ──────────────────────────────────────────────────
+cp_help() {
+    cat <<EOF
+compose-publisher v${CP_VERSION}
+
+Usage: compose-publisher <command> [options]
+
+Commands:
+  build     <component> --env <env>     Build a Docker image
+  deploy    <component> --env <env>     Build + transfer + deploy to VPS
+  setup     --env <env>                 Set up a VPS (Docker, firewall, etc.)
+  env       push|pull --env <env>       Transfer .env files to/from VPS
+  ssh       <env>                       SSH into a configured host
+
+Options:
+  --env <env>       Target environment (required)
+  --all             Deploy all components
+  --help            Show this help
+  --version         Show version
+
+Examples:
+  compose-publisher build backend --env prod
+  compose-publisher deploy backend --env prod
+  compose-publisher deploy --all --env dev
+  compose-publisher setup --env prod
+  compose-publisher env push --env prod
+  compose-publisher ssh prod
+EOF
+}
+
+cp_help_build() {
+    cat <<EOF
+Usage: compose-publisher build <component> --env <env>
+
+Build a Docker image for a component.
+
+  - Clones source from git (or uses local directory)
+  - Checks out the branch configured for the environment
+  - Builds with docker build (supports --target and --build-arg)
+  - Tags as {component}:{branch}.{commit} and {component}:latest
+
+Options:
+  --env <env>       Target environment (determines branch)
+
+Example:
+  compose-publisher build backend --env prod
+EOF
+}
+
+cp_help_deploy() {
+    cat <<EOF
+Usage: compose-publisher deploy <component> --env <env>
+       compose-publisher deploy --all --env <env>
+
+Build, transfer, and deploy a component to VPS.
+
+  - Builds the Docker image
+  - Pushes to VPS-local registry via SSH tunnel (only changed layers)
+  - Copies compose files and .env to VPS
+  - Runs docker compose pull + up -d --no-deps --force-recreate
+
+Options:
+  --env <env>       Target environment
+  --all             Deploy all components
+
+Example:
+  compose-publisher deploy backend --env prod
+  compose-publisher deploy --all --env dev
+EOF
+}
+
+cp_help_setup() {
+    cat <<EOF
+Usage: compose-publisher setup --env <env>
+
+Set up a VPS for deployments.
+
+Installs and configures:
+  - Docker CE + Compose plugin
+  - UFW firewall (allow 22, 80, 443)
+  - fail2ban (SSH jail)
+  - Swap (4GB)
+  - Docker log rotation
+  - Unattended security upgrades
+  - SSH hardening (disable password auth)
+
+Options:
+  --env <env>       Target environment (determines host)
+
+Example:
+  compose-publisher setup --env prod
+EOF
+}
+
+cp_help_env() {
+    cat <<EOF
+Usage: compose-publisher env push --env <env>
+       compose-publisher env pull --env <env>
+
+Transfer .env files to/from VPS.
+
+  push    Copy local .env file to VPS
+  pull    Copy .env file from VPS to local
+
+Options:
+  --env <env>       Target environment
+
+Example:
+  compose-publisher env push --env prod
+  compose-publisher env pull --env dev
+EOF
+}
+
+# ─── Arg parsing ───────────────────────────────────────────
+cp_parse_args() {
+    CP_COMMAND=""
+    CP_COMPONENT=""
+    CP_ENV=""
+    CP_ALL=false
+    CP_SUBCOMMAND=""
+
+    if [[ $# -eq 0 ]]; then
+        cp_help
+        exit 0
+    fi
+
+    # First arg is the command
+    CP_COMMAND="$1"
+    shift
+
+    # Handle --help and --version at top level
+    case "$CP_COMMAND" in
+        --help|-h)
+            cp_help
+            exit 0
+            ;;
+        --version|-v)
+            echo "compose-publisher v${CP_VERSION}"
+            exit 0
+            ;;
+    esac
+
+    # Parse remaining args
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --env)
+                if [[ $# -lt 2 ]]; then
+                    lib_log_error "--env requires a value"
+                    exit 1
+                fi
+                CP_ENV="$2"
+                shift 2
+                ;;
+            --all)
+                CP_ALL=true
+                shift
+                ;;
+            --help|-h)
+                case "$CP_COMMAND" in
+                    build)  cp_help_build ;;
+                    deploy) cp_help_deploy ;;
+                    setup)  cp_help_setup ;;
+                    env)    cp_help_env ;;
+                    *)      cp_help ;;
+                esac
+                exit 0
+                ;;
+            *)
+                if [[ "$CP_COMMAND" == "env" && -z "$CP_SUBCOMMAND" ]]; then
+                    CP_SUBCOMMAND="$1"
+                elif [[ "$CP_COMMAND" == "ssh" && -z "$CP_ENV" ]]; then
+                    CP_ENV="$1"
+                elif [[ -z "$CP_COMPONENT" ]]; then
+                    CP_COMPONENT="$1"
+                else
+                    lib_log_error "Unknown argument: $1"
+                    exit 1
+                fi
+                shift
+                ;;
+        esac
+    done
+}
+
+# ─── Validation ────────────────────────────────────────────
+cp_validate() {
+    # Valid command check
+    case "$CP_COMMAND" in
+        build|deploy|setup|env|ssh) ;;
+        *)
+            lib_log_error "Unknown command: $CP_COMMAND"
+            cp_help
+            exit 1
+            ;;
+    esac
+
+    # Commands that require --env
+    if [[ -z "$CP_ENV" ]]; then
+        lib_log_error "Missing --env flag"
+        exit 1
+    fi
+
+    # Commands that require a component
+    case "$CP_COMMAND" in
+        build)
+            if [[ -z "$CP_COMPONENT" ]]; then
+                lib_log_error "Missing component. Usage: compose-publisher build <component> --env <env>"
+                exit 1
+            fi
+            ;;
+        deploy)
+            if [[ -z "$CP_COMPONENT" && "$CP_ALL" == false ]]; then
+                lib_log_error "Missing component or --all flag. Usage: compose-publisher deploy <component> --env <env>"
+                exit 1
+            fi
+            ;;
+    esac
+
+    # env subcommand validation
+    if [[ "$CP_COMMAND" == "env" ]]; then
+        case "$CP_SUBCOMMAND" in
+            push|pull) ;;
+            "")
+                lib_log_error "Missing subcommand. Usage: compose-publisher env push|pull --env <env>"
+                exit 1
+                ;;
+            *)
+                lib_log_error "Unknown env subcommand: $CP_SUBCOMMAND"
+                exit 1
+                ;;
+        esac
+    fi
+
+    # Config file check
+    if [[ ! -f "compose-publisher.yml" ]]; then
+        lib_log_error "compose-publisher.yml not found in current directory"
+        exit 1
+    fi
+
+    # Docker check (for build/deploy)
+    case "$CP_COMMAND" in
+        build|deploy)
+            if ! docker info &> /dev/null 2>&1; then
+                lib_log_error "Docker daemon not running"
+                exit 1
+            fi
+            ;;
+    esac
+
+    # F-011: SSH key check (for commands that need SSH)
+    case "$CP_COMMAND" in
+        deploy|setup|env|ssh)
+            config_load_env "$CP_ENV"
+            if [[ ! -f "$CP_SSH_KEY" ]]; then
+                lib_log_error "SSH key not found: ${CP_SSH_KEY}"
+                exit 1
+            fi
+            ;;
+    esac
+}
+
+# ─── Command dispatch ─────────────────────────────────────
+cp_dispatch() {
+    case "$CP_COMMAND" in
+        build)
+            cp_build "$CP_COMPONENT" "$CP_ENV"
+            ;;
+        deploy)
+            if [[ "$CP_ALL" == true ]]; then
+                cp_deploy_all "$CP_ENV"
+            else
+                cp_build "$CP_COMPONENT" "$CP_ENV"
+                cp_transfer
+                cp_deploy "$CP_COMPONENT" "$CP_ENV"
+            fi
+            ;;
+        setup)
+            cp_setup "$CP_ENV"
+            ;;
+        env)
+            case "$CP_SUBCOMMAND" in
+                push) cp_env_push "$CP_ENV" ;;
+                pull) cp_env_pull "$CP_ENV" ;;
+            esac
+            ;;
+        ssh)
+            cp_ssh "$CP_ENV"
+            ;;
+        *)
+            lib_log_error "Unknown command: $CP_COMMAND"
+            cp_help
+            exit 1
+            ;;
+    esac
+}
+
+# ─── Main ──────────────────────────────────────────────────
+cp_parse_args "$@"
+cp_validate
+cp_dispatch

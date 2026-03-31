@@ -1,0 +1,42 @@
+# Example: Multiple repositories, each service in its own repo
+# Source is a git URL — compose-publisher clones and builds each
+
+environments:
+  dev:
+    host: 10.0.0.10
+    user: root
+    ssh_key: ~/.ssh/id_deploy
+    branch: develop
+    env_file: deployment/dev/.env
+    compose_files:
+      - deployment/dev/docker-compose.yml
+
+  prod:
+    host: 10.0.0.20
+    user: root
+    ssh_key: ~/.ssh/id_deploy
+    branch: main
+    env_file: deployment/prod/.env
+    compose_files:
+      - deployment/prod/docker-compose.yml
+      - deployment/prod/docker-compose.prod.yml
+    deploy_path: ~/deployment/apps
+
+components:
+  api:
+    source: git@github.com:myorg/api-service.git
+    dockerfile: Dockerfile
+    target: production
+    compose_service: api
+    stack: apps
+    args:
+      NPM_TOKEN: "${NPM_TOKEN}"
+
+  web:
+    source: git@github.com:myorg/web-frontend.git
+    dockerfile: Dockerfile
+    target: runner
+    compose_service: web
+    stack: apps
+    args:
+      REACT_APP_API_URL: https://api.example.com

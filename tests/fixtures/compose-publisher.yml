@@ -1,0 +1,39 @@
+environments:
+  dev:
+    host: 157.245.190.48
+    user: root
+    ssh_key: ~/.ssh/id_deploy
+    branch: develop
+    env_file: deployment/dev/.env
+    compose_files:
+      - deployment/dev/docker-compose.yml
+
+  prod:
+    host: 161.35.240.218
+    user: root
+    ssh_key: ~/.ssh/id_deploy
+    branch: main
+    env_file: deployment/prod/.env
+    compose_files:
+      - deployment/prod/docker-compose.yml
+      - deployment/prod/docker-compose.prod.yml
+    deploy_path: ~/deployment/apps
+
+components:
+  backend:
+    source: git@github.com:example/backend.git
+    dockerfile: Dockerfile
+    context: .
+    target: production
+    compose_service: backend
+    stack: apps
+    platform: linux/amd64
+    args:
+      NPM_TOKEN: "${NPM_TOKEN}"
+
+  frontend:
+    source: ./frontend
+    dockerfile: Dockerfile
+    target: runner
+    compose_service: frontend
+    stack: apps
