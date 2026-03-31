@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ─── Version ───────────────────────────────────────────────
-CP_VERSION="0.1.0"
+CP_VERSION="0.2.0"
 
 # ─── Resolve install paths ─────────────────────────────────
 # When running from repo: bin/compose-publisher → lib/ is at ../lib/
