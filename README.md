@@ -236,9 +236,12 @@ See [`examples/`](examples/) for complete config files:
 - [`monorepo.yml`](examples/monorepo.yml) — Multiple services in one repo
 - [`multi-repo.yml`](examples/multi-repo.yml) — Each service in its own git repo
 - [`with-traefik.yml`](examples/with-traefik.yml) — Project with Traefik HTTPS proxy
+- [`with-blockchain.yml`](examples/with-blockchain.yml) — Project with private dev blockchain
 
 See [`templates/`](templates/) for reusable stack templates:
 - [`templates/proxy/`](templates/proxy/) — Traefik reverse proxy with Let's Encrypt
+- [`templates/blockchain/`](templates/blockchain/) — Geth private dev chain + Blockscout explorer
+- [`templates/ipfs/`](templates/ipfs/) — IPFS node (Kubo) for decentralized storage
 
 ## License
 

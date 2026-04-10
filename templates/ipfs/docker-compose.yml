@@ -1,0 +1,59 @@
+# ==============================================================================
+# IPFS Stack — Kubo (Go-IPFS) Node
+# ==============================================================================
+#   compose-publisher deploy ipfs --env prod
+#
+#   Kubo:  Go implementation of IPFS for decentralized file storage
+#
+#   Ports:
+#     4001  — Swarm (P2P, needed to connect to the IPFS network)
+#     5001  — API (add/pin/manage files — restrict access, allows writes)
+#     8080  — Gateway (read-only HTTP access to IPFS content)
+#
+#   Usage:
+#     Add a file:     curl -F file=@myfile.txt http://localhost:5001/api/v0/add
+#     Read via CID:   curl http://localhost:8080/ipfs/<CID>
+#     Pin a CID:      curl -X POST http://localhost:5001/api/v0/pin/add?arg=<CID>
+#     Check peers:    curl http://localhost:5001/api/v0/swarm/peers
+# ==============================================================================
+
+services:
+  ipfs:
+    image: ipfs/kubo:v0.40.1
+    container_name: ipfs
+    restart: unless-stopped
+    command: daemon --migrate=true
+    environment:
+      IPFS_PROFILE: ${IPFS_PROFILE:-server}
+    volumes:
+      - ipfs_data:/data/ipfs
+    ports:
+      - "${IPFS_SWARM_ADDR:-0.0.0.0}:${IPFS_SWARM_PORT:-4001}:4001"
+      - "127.0.0.1:${IPFS_API_PORT:-5001}:5001"
+      - "127.0.0.1:${IPFS_GATEWAY_PORT:-8080}:8080"
+    networks:
+      - ipfs
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ipfs-gateway.rule=Host(`${IPFS_GATEWAY_HOST:-ipfs.localhost}`)"
+      - "traefik.http.routers.ipfs-gateway.entrypoints=websecure"
+      - "traefik.http.routers.ipfs-gateway.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ipfs-gateway.loadbalancer.server.port=8080"
+    healthcheck:
+      test: ["CMD", "ipfs", "version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: ${IPFS_MEM_LIMIT:-2g}
+    cpus: ${IPFS_CPUS:-2.0}
+
+volumes:
+  ipfs_data:
+
+networks:
+  ipfs:
+    name: ipfs
+  proxy:
+    name: proxy
+    external: true
