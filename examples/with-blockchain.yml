@@ -1,0 +1,42 @@
+# Example: Project with private blockchain for development
+#
+# Setup flow:
+#   1. compose-publisher setup --env dev
+#      → installs Docker, proxy network, etc.
+#   2. Copy templates/blockchain/ to your project's deployment/blockchain/
+#      → cp .env.example .env and edit GETH_RPC_URL
+#   3. compose-publisher deploy blockchain --env dev
+#      → Geth private chain + Otterscan explorer running
+#   4. Get the dev account (pre-funded with unlimited ETH):
+#      → docker exec geth geth attach --exec "eth.accounts[0]" /data/geth.ipc
+#
+# Access (local):
+#   Geth RPC:   http://localhost:8545
+#   WebSocket:  ws://localhost:8546
+#   Otterscan:  http://localhost:5100
+
+environments:
+  dev:
+    host: 10.0.0.10
+    user: root
+    ssh_key: ~/.ssh/id_deploy
+    branch: develop
+    env_file: deployment/blockchain/.env
+    compose_files:
+      - deployment/dev/docker-compose.yml
+    deploy_path: ~/deployment
+
+components:
+  # Private blockchain (deployed once)
+  blockchain:
+    source: ./deployment/blockchain
+    compose_service: geth
+    stack: blockchain
+
+  # App services (deployed on every push)
+  backend:
+    source: ./backend
+    dockerfile: Dockerfile
+    target: production
+    compose_service: backend
+    stack: apps

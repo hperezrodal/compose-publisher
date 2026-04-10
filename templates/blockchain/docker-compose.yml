@@ -1,0 +1,184 @@
+# ==============================================================================
+# Blockchain Stack — Geth (Private Dev Chain) + Blockscout (Block Explorer)
+# ==============================================================================
+#   compose-publisher deploy blockchain --env dev
+#
+#   Geth:       Private dev chain with pre-funded account and persistent storage
+#   Blockscout: Full-featured block explorer with native Geth support
+#   PostgreSQL: Database for Blockscout
+#
+#   Geth runs in --dev mode with a mounted volume. The dev account is
+#   automatically created and pre-funded with unlimited ETH. Blocks are
+#   mined on-demand when transactions are pending.
+#
+#   Chain ID: 1337 (Geth dev default)
+#
+#   Get the dev account address:
+#     docker exec geth geth attach --exec "eth.accounts[0]" /data/geth.ipc
+#
+#   Get the dev account balance:
+#     docker exec geth geth attach --exec "eth.getBalance(eth.accounts[0])" /data/geth.ipc
+# ==============================================================================
+
+services:
+  # --------------------------------------------------------------------------
+  # Geth — Private dev blockchain node
+  # --------------------------------------------------------------------------
+  geth:
+    image: ethereum/client-go:v1.17.0
+    container_name: geth
+    restart: unless-stopped
+    command:
+      - --dev
+      - --dev.period=${GETH_BLOCK_PERIOD:-0}
+      - --datadir=/data
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.port=8545
+      - --http.api=eth,net,web3,debug,txpool
+      - --http.corsdomain=*
+      - --http.vhosts=*
+      - --ws
+      - --ws.addr=0.0.0.0
+      - --ws.port=8546
+      - --ws.api=eth,net,web3,debug,txpool
+      - --ws.origins=*
+      - --gcmode=archive
+    volumes:
+      - geth_data:/data
+    ports:
+      - "127.0.0.1:${GETH_RPC_PORT:-8545}:8545"
+      - "127.0.0.1:${GETH_WS_PORT:-8546}:8546"
+    networks:
+      - blockchain
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.geth-rpc.rule=Host(`${GETH_RPC_HOST:-rpc.localhost}`)"
+      - "traefik.http.routers.geth-rpc.entrypoints=websecure"
+      - "traefik.http.routers.geth-rpc.tls.certresolver=letsencrypt"
+      - "traefik.http.services.geth-rpc.loadbalancer.server.port=8545"
+      - "traefik.http.routers.geth-rpc.middlewares=rpc-ratelimit,rpc-ipwhitelist"
+      # Rate limiting: max requests per second per client IP
+      - "traefik.http.middlewares.rpc-ratelimit.ratelimit.average=${RPC_RATE_LIMIT_AVG:-20}"
+      - "traefik.http.middlewares.rpc-ratelimit.ratelimit.burst=${RPC_RATE_LIMIT_BURST:-50}"
+      - "traefik.http.middlewares.rpc-ratelimit.ratelimit.period=1s"
+      - "traefik.http.middlewares.rpc-ratelimit.ratelimit.sourcecriterion.ipstrategy.depth=1"
+      # IP whitelist: only these IPs can reach the RPC
+      - "traefik.http.middlewares.rpc-ipwhitelist.ipallowlist.sourcerange=${RPC_ALLOWED_IPS:-0.0.0.0/0}"
+    mem_limit: 2g
+    cpus: 2.0
+
+  # --------------------------------------------------------------------------
+  # PostgreSQL — Blockscout database
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: blockscout-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: blockscout
+      POSTGRES_USER: blockscout
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-blockscout}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - blockchain
+    mem_limit: 512m
+    cpus: 1.0
+
+  # --------------------------------------------------------------------------
+  # Blockscout — Block explorer
+  # --------------------------------------------------------------------------
+  blockscout:
+    image: ghcr.io/blockscout/blockscout:9.0.2
+    container_name: blockscout
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - geth
+    command: sh -c "bin/blockscout eval \"Elixir.Explorer.ReleaseTasks.create_and_migrate()\" && bin/blockscout start"
+    environment:
+      ETHEREUM_JSONRPC_VARIANT: geth
+      ETHEREUM_JSONRPC_HTTP_URL: http://geth:8545
+      ETHEREUM_JSONRPC_WS_URL: ws://geth:8546
+      DATABASE_URL: postgresql://blockscout:${POSTGRES_PASSWORD:-blockscout}@postgres:5432/blockscout
+      ECTO_USE_SSL: "false"
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-super_secret_key_base_that_should_be_at_least_64_bytes_long_for_production}
+      API_V2_ENABLED: "true"
+      COIN: ${NEXT_PUBLIC_NETWORK_CURRENCY_SYMBOL:-ETH}
+      COIN_NAME: ${NEXT_PUBLIC_NETWORK_CURRENCY_SYMBOL:-ETH}
+      NETWORK: ${NEXT_PUBLIC_NETWORK_NAME:-Dev Chain}
+      SUBNETWORK: "Private"
+      CHAIN_ID: ${NEXT_PUBLIC_NETWORK_ID:-1337}
+      DISABLE_EXCHANGE_RATES: "true"
+      INDEXER_DISABLE_PENDING_TRANSACTIONS_FETCHER: "true"
+    ports:
+      - "127.0.0.1:${EXPLORER_PORT:-4000}:4000"
+    networks:
+      - blockchain
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      # API routes — higher priority so /api and /socket hit the backend, not the frontend
+      - "traefik.http.routers.blockscout-api.rule=Host(`${EXPLORER_HOST:-explorer.localhost}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.blockscout-api.priority=200"
+      - "traefik.http.routers.blockscout-api.entrypoints=websecure"
+      - "traefik.http.routers.blockscout-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.blockscout-api.service=blockscout-api"
+      - "traefik.http.services.blockscout-api.loadbalancer.server.port=4000"
+      # WebSocket route for live updates
+      - "traefik.http.routers.blockscout-socket.rule=Host(`${EXPLORER_HOST:-explorer.localhost}`) && PathPrefix(`/socket`)"
+      - "traefik.http.routers.blockscout-socket.priority=200"
+      - "traefik.http.routers.blockscout-socket.entrypoints=websecure"
+      - "traefik.http.routers.blockscout-socket.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.blockscout-socket.service=blockscout-api"
+    mem_limit: 1g
+    cpus: 1.0
+
+  # --------------------------------------------------------------------------
+  # Blockscout Frontend — Explorer UI
+  # --------------------------------------------------------------------------
+  blockscout-frontend:
+    image: ghcr.io/blockscout/frontend:latest
+    container_name: blockscout-frontend
+    restart: unless-stopped
+    depends_on:
+      - blockscout
+    env_file:
+      - .env
+    environment:
+      HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_API_HOST: ${EXPLORER_HOST:-explorer.localhost}
+      NEXT_PUBLIC_API_PORT: "443"
+      NEXT_PUBLIC_API_PROTOCOL: https
+      NEXT_PUBLIC_API_WEBSOCKET_PROTOCOL: wss
+      NEXT_PUBLIC_APP_HOST: ${EXPLORER_HOST:-explorer.localhost}
+      NEXT_PUBLIC_APP_PROTOCOL: https
+      NEXT_PUBLIC_HOMEPAGE_CHARTS: "['daily_txs']"
+      NEXT_PUBLIC_API_SPEC_URL: https://raw.githubusercontent.com/blockscout/blockscout-api-v2-swagger/main/swagger.yaml
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+    networks:
+      - blockchain
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.blockscout-frontend.rule=Host(`${EXPLORER_HOST:-explorer.localhost}`)"
+      - "traefik.http.routers.blockscout-frontend.priority=100"
+      - "traefik.http.routers.blockscout-frontend.entrypoints=websecure"
+      - "traefik.http.routers.blockscout-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.blockscout-frontend.loadbalancer.server.port=3000"
+    mem_limit: 512m
+    cpus: 0.5
+
+volumes:
+  geth_data:
+  postgres_data:
+
+networks:
+  blockchain:
+    name: blockchain
+  proxy:
+    name: proxy
+    external: true
