@@ -1,0 +1,49 @@
+# ==============================================================================
+# Promtail Stack — Local log shipper for Loki
+# ==============================================================================
+#   compose-publisher deploy promtail --env prod
+#
+#   Ships all Docker container logs on this host to Loki using the
+#   Docker service discovery mechanism. Each log line is labeled with
+#   the container name, image, compose project, and a configurable host
+#   label so you can filter by host in Grafana.
+#
+#   Two typical usages:
+#     1) Colocated with Loki: set LOKI_URL=http://loki:3100/loki/api/v1/push
+#        (requires the `monitoring` Docker network to reach Loki)
+#     2) Remote Loki over HTTPS: set LOKI_URL=https://loki.example.com/loki/api/v1/push
+#        with LOKI_USERNAME / LOKI_PASSWORD for basic auth
+# ==============================================================================
+
+services:
+  promtail:
+    image: grafana/promtail:3.5.0
+    container_name: promtail
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/promtail/promtail.yml
+      - -config.expand-env=true
+    volumes:
+      - ./config/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - promtail_data:/tmp
+    environment:
+      - HOST_LABEL=${HOST_LABEL:-unknown}
+      - LOKI_URL=${LOKI_URL:-http://loki:3100/loki/api/v1/push}
+      - LOKI_USERNAME=${LOKI_USERNAME:-}
+      - LOKI_PASSWORD=${LOKI_PASSWORD:-}
+    networks:
+      - monitoring
+    mem_limit: ${PROMTAIL_MEM_LIMIT:-128m}
+    cpus: ${PROMTAIL_CPUS:-0.25}
+
+volumes:
+  promtail_data:
+
+networks:
+  # Join the monitoring network when running next to Loki. When shipping to a
+  # remote Loki via HTTPS, this network is still created but unused.
+  monitoring:
+    name: monitoring
+    external: true

@@ -1,0 +1,47 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  # LOKI_URL is injected via env var. For a colocated Loki use
+  # http://loki:3100/loki/api/v1/push; for a remote one use the HTTPS URL.
+  # LOKI_USERNAME and LOKI_PASSWORD enable basic auth when Loki is exposed
+  # through a reverse proxy.
+  - url: ${LOKI_URL}
+    basic_auth:
+      username: ${LOKI_USERNAME:-}
+      password: ${LOKI_PASSWORD:-}
+
+scrape_configs:
+  # Discover all Docker containers on the host and ship their stdout/stderr
+  # to Loki. Labels are derived from Docker metadata so the same query
+  # works whether the container is an app, infra, or monitoring service.
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: container
+      - source_labels: ['__meta_docker_container_log_stream']
+        target_label: stream
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        target_label: compose_project
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: compose_service
+      - target_label: host
+        replacement: ${HOST_LABEL}
+    pipeline_stages:
+      # If the log line is JSON, extract common fields (level, msg).
+      - json:
+          expressions:
+            level: level
+            severity: severity
+            msg: message
+      - labels:
+          level:
+          severity:

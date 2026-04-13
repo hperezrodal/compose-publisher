@@ -1,0 +1,69 @@
+# ==============================================================================
+# MinIO Stack — S3-compatible object storage
+# ==============================================================================
+#   compose-publisher deploy minio --env dev
+#
+#   MinIO:  High-performance S3-compatible object storage for non-prod
+#           environments. In production, use AWS S3 or equivalent.
+#
+#   Ports:
+#     9000  — API (S3-compatible endpoint)
+#     9001  — Console (web UI for managing buckets and users)
+#
+#   Usage:
+#     Create bucket:    mc mb local/my-bucket
+#     Upload file:      mc cp myfile.txt local/my-bucket/
+#     List buckets:     mc ls local
+#     Create user:      mc admin user add local myuser mypassword
+#     Set policy:       mc admin policy attach local readwrite --user myuser
+# ==============================================================================
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    networks:
+      - minio
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      # API endpoint (S3-compatible)
+      - "traefik.http.routers.minio-api.rule=Host(`${MINIO_API_HOST:-s3.localhost}`)"
+      - "traefik.http.routers.minio-api.entrypoints=websecure"
+      - "traefik.http.routers.minio-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.minio-api.service=minio-api"
+      - "traefik.http.services.minio-api.loadbalancer.server.port=9000"
+      # Console (web UI)
+      - "traefik.http.routers.minio-console.rule=Host(`${MINIO_CONSOLE_HOST:-minio.localhost}`)"
+      - "traefik.http.routers.minio-console.entrypoints=websecure"
+      - "traefik.http.routers.minio-console.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.minio-console.service=minio-console"
+      - "traefik.http.services.minio-console.loadbalancer.server.port=9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    mem_limit: ${MINIO_MEM_LIMIT:-1g}
+    cpus: ${MINIO_CPUS:-1.0}
+
+volumes:
+  minio_data:
+
+networks:
+  minio:
+    name: minio
+  proxy:
+    name: proxy
+    external: true

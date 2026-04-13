@@ -1,0 +1,47 @@
+# ==============================================================================
+# PostgreSQL Stack — Relational database
+# ==============================================================================
+#   compose-publisher deploy postgres --env dev
+#
+#   PostgreSQL:  Production-ready relational database with optional
+#                extensions (pgvector, PostGIS, etc.) via custom image.
+#
+#   Port: 5432
+#
+#   Usage:
+#     Connect:    psql -h localhost -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+#     List DBs:   docker exec postgres psql -U ${POSTGRES_USER} -l
+#     Create DB:  docker exec postgres createdb -U ${POSTGRES_USER} mydb
+# ==============================================================================
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-app}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    mem_limit: ${POSTGRES_MEM_LIMIT:-512m}
+    cpus: ${POSTGRES_CPUS:-1.0}
+
+volumes:
+  postgres_data:
+
+networks:
+  postgres:
+    name: postgres
