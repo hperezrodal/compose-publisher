@@ -27,6 +27,7 @@ services:
       IPFS_PROFILE: ${IPFS_PROFILE:-server}
     volumes:
       - ipfs_data:/data/ipfs
+      - ./init.d:/container-init.d:ro
     ports:
       - "${IPFS_SWARM_ADDR:-0.0.0.0}:${IPFS_SWARM_PORT:-4001}:4001"
       - "127.0.0.1:${IPFS_API_PORT:-5001}:5001"
@@ -36,10 +37,21 @@ services:
       - proxy
     labels:
       - "traefik.enable=true"
+      # Public gateway (read-only) — 8080
       - "traefik.http.routers.ipfs-gateway.rule=Host(`${IPFS_GATEWAY_HOST:-ipfs.localhost}`)"
       - "traefik.http.routers.ipfs-gateway.entrypoints=websecure"
       - "traefik.http.routers.ipfs-gateway.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ipfs-gateway.service=ipfs-gateway"
       - "traefik.http.services.ipfs-gateway.loadbalancer.server.port=8080"
+      # Write API — 5001, protected by basic auth. Leave IPFS_API_HOST and
+      # IPFS_API_BASIC_AUTH unset to disable this route entirely.
+      - "traefik.http.routers.ipfs-api.rule=Host(`${IPFS_API_HOST:-ipfs-api.localhost}`)"
+      - "traefik.http.routers.ipfs-api.entrypoints=websecure"
+      - "traefik.http.routers.ipfs-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ipfs-api.service=ipfs-api"
+      - "traefik.http.routers.ipfs-api.middlewares=ipfs-api-auth"
+      - "traefik.http.middlewares.ipfs-api-auth.basicauth.users=${IPFS_API_BASIC_AUTH:-}"
+      - "traefik.http.services.ipfs-api.loadbalancer.server.port=5001"
     healthcheck:
       test: ["CMD", "ipfs", "version"]
       interval: 10s
