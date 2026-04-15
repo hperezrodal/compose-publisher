@@ -95,6 +95,15 @@ config_load_component() {
     CP_CONTEXT="${CP_CONTEXT:-.}"
     CP_TARGET=$(_cp_yq ".components.${component}.target")
     CP_COMPOSE_SERVICE=$(_cp_yq ".components.${component}.compose_service")
+    # image_name: optional override for the docker image name. Defaults to
+    # compose_service so existing configs keep working, but is required when
+    # the compose file references the image by a name that differs from the
+    # service key (e.g. `traceability-service` vs `service`). Without this
+    # the build pushes to localhost:5000/<compose_service>:latest while
+    # docker-compose tries to pull localhost:5000/<image_name>:latest and
+    # silently serves the previous image.
+    CP_IMAGE_NAME=$(_cp_yq ".components.${component}.image_name")
+    CP_IMAGE_NAME="${CP_IMAGE_NAME:-$CP_COMPOSE_SERVICE}"
     CP_STACK=$(_cp_yq ".components.${component}.stack")
     CP_STACK="${CP_STACK:-default}"
     CP_PLATFORM=$(_cp_yq ".components.${component}.platform")
@@ -104,7 +113,7 @@ config_load_component() {
         "source" "$CP_SOURCE" \
         "compose_service" "$CP_COMPOSE_SERVICE"
 
-    export CP_SOURCE CP_DOCKERFILE CP_CONTEXT CP_TARGET CP_COMPOSE_SERVICE CP_STACK CP_PLATFORM
+    export CP_SOURCE CP_DOCKERFILE CP_CONTEXT CP_TARGET CP_COMPOSE_SERVICE CP_IMAGE_NAME CP_STACK CP_PLATFORM
 }
 
 # ─── Resolve environment from branch ──────────────────────

@@ -22,7 +22,13 @@ cp_build() {
     local source_type=""
 
     # ── Determine source type ──
-    if [[ "$CP_SOURCE" == ./* || "$CP_SOURCE" == /* ]]; then
+    # Any path-like source (./, ../, /...) is treated as local — no clone.
+    # Local mode is important for monorepo layouts where the Dockerfile
+    # expects sibling directories in its build context: a git clone would
+    # only contain the source repo in isolation and would fail any
+    # `COPY ../sibling …` steps. Git URLs (github.com/..., git@..., etc.)
+    # still go through the clone-to-tmp path.
+    if [[ "$CP_SOURCE" == ./* || "$CP_SOURCE" == /* || "$CP_SOURCE" == ../* || "$CP_SOURCE" == ".." ]]; then
         source_type="local"
         build_dir="$CP_SOURCE"
         lib_log_info "Source: local (${build_dir})"
@@ -59,7 +65,9 @@ cp_build() {
     local commit
     commit=$(lib_git_current_commit 2>/dev/null || echo "unknown")
     local tag="${CP_BRANCH}.${commit}"
-    local image="${CP_COMPOSE_SERVICE}"
+    # Prefer the explicit `image_name:` override from YAML, fall back to the
+    # compose_service for backward compatibility with configs that never set it.
+    local image="${CP_IMAGE_NAME:-$CP_COMPOSE_SERVICE}"
 
     lib_log_info "Image: ${image}:${tag}"
 
