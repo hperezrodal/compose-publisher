@@ -280,6 +280,13 @@ cp_validate() {
         exit 1
     fi
 
+    # Pin the config path to an absolute resolution BEFORE any cp_build step
+    # changes cwd into a build context. _cp_yq runs inside `$(...)` subshells
+    # so it can't propagate a resolution back to the parent — do it here
+    # where we're still in the user's original working directory.
+    CP_CONFIG_FILE="$(readlink -f compose-publisher.yml)"
+    export CP_CONFIG_FILE
+
     # Docker check (for build/deploy)
     case "$CP_COMMAND" in
         build|deploy)
