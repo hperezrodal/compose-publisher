@@ -1,9 +1,23 @@
 # lib/config.sh — compose-publisher.yml config parser
 
-CP_CONFIG_FILE="compose-publisher.yml"
+# Resolved to an absolute path on first _cp_yq call so later helpers that
+# `cd` into a build context (notably cp_build) still find the config. Keep
+# the variable tolerant of pre-set values in case a caller overrides it.
+CP_CONFIG_FILE="${CP_CONFIG_FILE:-compose-publisher.yml}"
 
 # ─── Read a YAML value with yq, return empty string if null ────
 _cp_yq() {
+    # Pin the config path to an absolute location the first time we read it.
+    # cp_build changes cwd into the build dir, which used to silently break
+    # every yq lookup that followed (e.g. `components.<comp>.args`).
+    if [[ "$CP_CONFIG_FILE" != /* ]]; then
+        local resolved
+        resolved="$(readlink -f "$CP_CONFIG_FILE" 2>/dev/null || true)"
+        if [[ -n "$resolved" && -f "$resolved" ]]; then
+            CP_CONFIG_FILE="$resolved"
+        fi
+    fi
+
     local result
     result=$(yq eval "$1" "$CP_CONFIG_FILE" 2>/dev/null)
     if [[ "$result" == "null" ]]; then
