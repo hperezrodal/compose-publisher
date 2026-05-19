@@ -164,12 +164,25 @@ config_load_component() {
     CP_POST_TIMEOUT="${CP_POST_TIMEOUT:-300}"
     CP_COMPONENT="$component"
 
+    # ── Deploy strategy (D28) ──
+    # Default `recreate` ⇒ Phase A path, byte-for-byte. `blue-green`
+    # opts in. Anything not setting it is unchanged.
+    CP_STRATEGY=$(_cp_yq ".components.${component}.strategy")
+    CP_STRATEGY="${CP_STRATEGY:-recreate}"
+    CP_BG_SOAK=$(_cp_yq ".components.${component}.blue_green.soak_seconds")
+    CP_BG_SOAK="${CP_BG_SOAK:-60}"
+    CP_BG_RETIRE=$(_cp_yq ".components.${component}.blue_green.retire_old")
+    CP_BG_RETIRE="${CP_BG_RETIRE:-true}"
+    CP_BG_PORT=$(_cp_yq ".components.${component}.blue_green.service_port")
+    CP_BG_PORT="${CP_BG_PORT:-3000}"
+
     lib_validate_params \
         "source" "$CP_SOURCE" \
         "compose_service" "$CP_COMPOSE_SERVICE"
 
     export CP_SOURCE CP_DOCKERFILE CP_CONTEXT CP_TARGET CP_COMPOSE_SERVICE CP_IMAGE_NAME CP_STACK CP_PLATFORM
     export CP_PRE_RUN CP_PRE_WHERE CP_PRE_TIMEOUT CP_POST_RUN CP_POST_WHERE CP_POST_TIMEOUT CP_COMPONENT
+    export CP_STRATEGY CP_BG_SOAK CP_BG_RETIRE CP_BG_PORT
 }
 
 # ─── Merged hook env (env-level base + component override) ──

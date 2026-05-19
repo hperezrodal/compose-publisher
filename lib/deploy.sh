@@ -86,6 +86,13 @@ cp_pipeline_deploy() {
     config_load_env "$env"
     config_load_component "$component"
 
+    # Strategy branch (D28): blue-green delegates; recreate = Phase A
+    # path below, byte-for-byte unchanged.
+    if [[ "${CP_STRATEGY:-recreate}" == "blue-green" ]]; then
+        cp_pipeline_deploy_bg "$component" "$env" "$start_ts"
+        return $?
+    fi
+
     # 1. pre_deploy — before any mutation; hard abort on failure (D13)
     rc=0; cp_hook_run pre || rc=$?
     if (( rc != 0 )); then
@@ -115,6 +122,65 @@ cp_pipeline_deploy() {
     fi
 
     _cp_finalize success "" 0 "$start_ts"
+    return 0
+}
+
+# ─── Blue/green pipeline (Phase B) ─────────────────────────
+# Guarantee: a bad new version never takes traffic; the old color
+# keeps serving until dev fixes. Exit 11 = green failed validation,
+# NOT flipped, blue still serving (zero user impact). Config already
+# loaded by cp_pipeline_deploy.
+cp_pipeline_deploy_bg() {
+    local component="$1" env="$2" start_ts="$3" rc=0
+
+    # 1. pre_deploy (D13) — before any mutation
+    rc=0; cp_hook_run pre || rc=$?
+    if (( rc != 0 )); then
+        lib_log_error "pre_deploy failed — aborting (nothing changed)"
+        _cp_finalize aborted pre 8 "$start_ts"; return 8
+    fi
+
+    # 2. resolve colors (D21/D26)
+    cp_bg_resolve
+
+    # 3. build + transfer the image (shared by both colors)
+    rc=0; cp_build "$component" "$env" || rc=$?
+    if (( rc != 0 )); then _cp_finalize failed build "$rc" "$start_ts"; return "$rc"; fi
+    rc=0; cp_transfer || rc=$?
+    if (( rc != 0 )); then _cp_finalize failed transfer "$rc" "$start_ts"; return "$rc"; fi
+
+    # 4. bring up the IDLE/target color (no public router yet)
+    rc=0; cp_bg_up_color "$CP_BG_TARGET" || rc=$?
+    if (( rc != 0 )); then _cp_finalize failed bg-up "$rc" "$start_ts"; return "$rc"; fi
+
+    # 5. validate the target color: wait-healthy + smoke, with ZERO
+    #    public traffic. Any failure ⇒ DO NOT FLIP; old color keeps
+    #    serving; leave target up for inspection (D23); exit 11.
+    rc=0; ( CP_COMPOSE_SERVICE="${CP_COMPOSE_SERVICE}-${CP_BG_TARGET}"; cp_wait_healthy ) || rc=$?
+    if (( rc != 0 )); then
+        lib_log_error "blue/green: ${CP_BG_TARGET} not healthy — NOT flipping; old color still serving"
+        _cp_finalize failed bg-health 11 "$start_ts"; return 11
+    fi
+    rc=0; cp_bg_smoke_idle || rc=$?
+    if (( rc != 0 )); then
+        lib_log_error "blue/green: smoke on ${CP_BG_TARGET} failed — NOT flipping; old color still serving"
+        _cp_finalize failed bg-smoke 11 "$start_ts"; return 11
+    fi
+
+    # 6. flip (D22): atomic dynamic-file swap. Old color stays up.
+    rc=0; cp_bg_flip "$CP_BG_TARGET" || rc=$?
+    if (( rc != 0 )); then
+        lib_log_error "blue/green: flip failed — old color still serving (no change)"
+        _cp_finalize failed flip 11 "$start_ts"; return 11
+    fi
+
+    # 7. soak + retire old color (skip on bootstrap — nothing to retire)
+    if (( CP_BG_BOOTSTRAP == 0 )); then
+        cp_bg_soak
+        cp_bg_retire "$CP_BG_ACTIVE"
+    fi
+
+    _cp_finalize success "flip:${CP_BG_TARGET}" 0 "$start_ts"
     return 0
 }
 

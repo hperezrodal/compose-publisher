@@ -248,6 +248,47 @@ pre_deploy → build → transfer → up → wait-healthy → post_deploy → no
   `CP_DURATION_S` (+ the hook context/env). It is **non-blocking** —
   a notifier failure never changes the exit code or stalls the deploy.
 
+### Blue/green deploys
+
+Opt-in per component (default `recreate` = the behaviour above,
+unchanged). Guarantee: **a bad new version never takes traffic; the
+old one keeps serving until it is fixed.**
+
+```yaml
+components:
+  web:
+    compose_service: wds-web-next
+    strategy: blue-green          # default: recreate
+    blue_green:
+      soak_seconds: 60            # keep old color hot after flip
+      retire_old: true            # remove old color after soak
+      service_port: 3000          # internal port for pre-flip smoke
+    post_deploy:
+      run: scripts/smoke.sh       # runs against the idle color, pre-flip
+```
+
+Flow: `pre_deploy → build → transfer → up IDLE color (no traffic) →
+wait-healthy → smoke IDLE → flip → soak → retire old`. The new
+(`green`) container is validated with **zero public traffic**; the
+public router only flips to it on success.
+
+- Containers are `<compose_service>-blue` / `-green`. Only the active
+  color carries the public router — via a **Traefik file/dynamic
+  provider**, not docker labels. The consumer enables the file
+  provider on the proxy and seeds a router template
+  `<stack>/dynamic/<service>.yml.tmpl` containing the placeholder
+  `__CP_ACTIVE_SERVICE__`; compose-publisher renders/installs it
+  atomically on flip. The per-color services declare only a Traefik
+  loadbalancer port (no Host router).
+- Validation fails (health or smoke) ⇒ **no flip**; old color keeps
+  serving; the failed color is left running for inspection; exit
+  **11** + notifier `failed`. Zero user impact.
+- Active color is recorded per service in
+  `<stack>/.cp-active-color-<service>` on the host.
+- `compose-publisher flip-back <component> --env <env>` — manual
+  kill-switch: instantly route back to the previous color (must still
+  be running, i.e. within the soak window).
+
 ## How it works
 
 ```

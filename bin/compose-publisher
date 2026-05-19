@@ -48,6 +48,7 @@ source "${CP_LIB_DIR}/build.sh"
 source "${CP_LIB_DIR}/transfer.sh"
 source "${CP_LIB_DIR}/deploy.sh"
 source "${CP_LIB_DIR}/hooks.sh"
+source "${CP_LIB_DIR}/bluegreen.sh"
 source "${CP_LIB_DIR}/setup.sh"
 source "${CP_LIB_DIR}/env.sh"
 
@@ -239,7 +240,7 @@ cp_parse_args() {
 cp_validate() {
     # Valid command check
     case "$CP_COMMAND" in
-        build|deploy|setup|env|ssh) ;;
+        build|deploy|setup|env|ssh|flip-back) ;;
         *)
             lib_log_error "Unknown command: $CP_COMMAND"
             cp_help
@@ -264,6 +265,12 @@ cp_validate() {
         deploy)
             if [[ -z "$CP_COMPONENT" && "$CP_ALL" == false ]]; then
                 lib_log_error "Missing component or --all flag. Usage: compose-publisher deploy <component> --env <env>"
+                exit 1
+            fi
+            ;;
+        flip-back)
+            if [[ -z "$CP_COMPONENT" ]]; then
+                lib_log_error "Missing component. Usage: compose-publisher flip-back <component> --env <env>"
                 exit 1
             fi
             ;;
@@ -309,7 +316,7 @@ cp_validate() {
 
     # F-011: SSH key check (for commands that need SSH)
     case "$CP_COMMAND" in
-        deploy|setup|env|ssh)
+        deploy|setup|env|ssh|flip-back)
             config_load_env "$CP_ENV"
             if [[ ! -f "$CP_SSH_KEY" ]]; then
                 lib_log_error "SSH key not found: ${CP_SSH_KEY}"
@@ -343,6 +350,11 @@ cp_dispatch() {
             ;;
         ssh)
             cp_ssh "$CP_ENV"
+            ;;
+        flip-back)
+            config_load_env "$CP_ENV"
+            config_load_component "$CP_COMPONENT"
+            cp_bg_flip_back
             ;;
         *)
             lib_log_error "Unknown command: $CP_COMMAND"

@@ -20,6 +20,9 @@ _cp_hook_envkv() {
         "CP_COMPOSE_SERVICE=${CP_COMPOSE_SERVICE:-}" \
         "CP_HOST=${CP_HOST:-}"
     [[ $# -gt 0 ]] && printf '%s\n' "$@"
+    # Generic last-wins override (e.g. blue/green injects an internal
+    # SMOKE_BASE_URL pointing at the idle color via an SSH tunnel).
+    [[ -n "${CP_HOOK_EXTRA_ENV:-}" ]] && printf '%s\n' "${CP_HOOK_EXTRA_ENV}"
 }
 
 # ─── Does a where=runner hook need the build clone kept? ───
