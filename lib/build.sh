@@ -110,11 +110,25 @@ cp_build() {
         return 2
     }
 
-    # ── Cleanup git clone ──
+    # ── Cleanup git clone (deferred if a runner hook needs the clone) ──
+    # D2: when a where=runner pre/post hook is configured, the app-repo
+    # entry point lives in this clone at the correct branch — keep it and
+    # let the deploy pipeline clean it up after post_deploy. No hook ⇒
+    # byte-for-byte the previous behaviour.
     if [[ "$source_type" == "git" ]]; then
-        cd /tmp || true
-        rm -rf "$build_dir"
-        lib_log_info "Cleaned up build directory"
+        if declare -F _cp_runner_hook_needs_clone >/dev/null 2>&1 && _cp_runner_hook_needs_clone; then
+            export CP_BUILD_DIR="$build_dir"
+            lib_log_info "Build clone retained for runner hook: ${build_dir}"
+        else
+            cd /tmp || true
+            rm -rf "$build_dir"
+            lib_log_info "Cleaned up build directory"
+            unset CP_BUILD_DIR 2>/dev/null || true
+        fi
+    else
+        # Local source: hooks run against the source dir as-is (never deleted;
+        # _cp_cleanup_clone only removes /tmp/* paths).
+        export CP_BUILD_DIR="$build_dir"
     fi
 
     # ── Export for transfer/deploy ──
