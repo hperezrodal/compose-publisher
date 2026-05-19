@@ -73,10 +73,10 @@ COPY . .
 # Uncomment the following line in case you want to disable telemetry during the build.
 # ENV NEXT_TELEMETRY_DISABLED=1
 
-# Public API URL — NEXT_PUBLIC_* se inlinea en build time (next build), no
-# alcanza con runtime env. Se pasa como build arg (compose-publisher
-# components.<x>.args.NEXT_PUBLIC_API_URL). Vacío = no-op (backward compat:
-# consumidores que no lo pasan no cambian).
+# Public API URL — NEXT_PUBLIC_* is inlined at build time (next build),
+# runtime env is not enough. Passed as a build arg (compose-publisher
+# components.<x>.args.NEXT_PUBLIC_API_URL). Empty = no-op (backward
+# compatible: consumers that don't pass it are unaffected).
 ARG NEXT_PUBLIC_API_URL=""
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
@@ -96,7 +96,7 @@ LABEL maintainer="hperezrodal <hperezrodal@gmail.com>"
 LABEL description="Runtime image for Next.js applications"
 LABEL version="1.0.0"
 
-# No instalar wget/curl en runtime - facilita descarga de malware si hay RCE
+# Do not install wget/curl at runtime - eases malware download on RCE
 
 # Create a non-root user
 ARG APP_USER=nextjs
@@ -143,7 +143,7 @@ USER ${APP_UID}
 
 EXPOSE 3000
 
-# Health check usando node (sin depender de wget/curl)
+# Health check using node (no wget/curl dependency)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
     CMD node -e "const http = require('http'); http.get('http://localhost:3000/', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1));"
 ENV HOSTNAME="0.0.0.0"
