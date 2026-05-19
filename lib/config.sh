@@ -91,6 +91,34 @@ config_load_component() {
     CP_SOURCE=$(_cp_yq ".components.${component}.source")
     CP_DOCKERFILE=$(_cp_yq ".components.${component}.dockerfile")
     CP_DOCKERFILE="${CP_DOCKERFILE:-Dockerfile}"
+
+    # Dockerfile template resolution.
+    # If `dockerfile:` is a bare template name (no `/`, no `.`, and not the
+    # literal default "Dockerfile") it is resolved as a reusable template:
+    #   1. consumer override: <config_dir>/dockerfiles/<name>.Dockerfile
+    #   2. built-in template: <CP_TEMPLATES_DIR>/dockerfiles/<name>.Dockerfile
+    # Any value containing `/` or `.` (a path) is used as-is — fully
+    # backward compatible with existing configs.
+    if [[ "$CP_DOCKERFILE" != "Dockerfile" \
+          && "$CP_DOCKERFILE" != */* \
+          && "$CP_DOCKERFILE" != *.* ]]; then
+        local _cp_tmpl_name="$CP_DOCKERFILE"
+        local _cp_cfg_dir _cp_override _cp_builtin
+        _cp_cfg_dir="$(dirname "$CP_CONFIG_FILE")"
+        _cp_override="${_cp_cfg_dir}/dockerfiles/${_cp_tmpl_name}.Dockerfile"
+        _cp_builtin="${CP_TEMPLATES_DIR:-/usr/local/share/compose-publisher/templates}/dockerfiles/${_cp_tmpl_name}.Dockerfile"
+        if [[ -f "$_cp_override" ]]; then
+            CP_DOCKERFILE="$_cp_override"
+            lib_log_info "Dockerfile template '${_cp_tmpl_name}': consumer override"
+        elif [[ -f "$_cp_builtin" ]]; then
+            CP_DOCKERFILE="$_cp_builtin"
+            lib_log_info "Dockerfile template '${_cp_tmpl_name}': compose-publisher built-in"
+        else
+            lib_log_error "Dockerfile template '${_cp_tmpl_name}' not found (looked: ${_cp_override} ; ${_cp_builtin})"
+            exit 1
+        fi
+    fi
+
     CP_CONTEXT=$(_cp_yq ".components.${component}.context")
     CP_CONTEXT="${CP_CONTEXT:-.}"
     CP_TARGET=$(_cp_yq ".components.${component}.target")
