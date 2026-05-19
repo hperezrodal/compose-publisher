@@ -209,6 +209,36 @@ config_load_env 'prod'
 echo \"DEPLOY_PATH=\${CP_DEPLOY_PATH}\"
 " 2>&1)
 assert_contains "$output" "DEPLOY_PATH=~/deployment/apps" "config_load_env reads custom deploy_path"
+
+# ssh_key: yml value (~ expanded) when no override
+output=$(bash -c "
+unset CP_SSH_KEY_OVERRIDE
+source \"\${BASH_LIBRARY_PATH:-\${HOME}/.local/lib/bash-library}/lib-loader.sh\"
+source '${REPO_DIR}/lib/config.sh'
+config_load_env 'dev'
+echo \"SSH_KEY=\${CP_SSH_KEY}\"
+" 2>&1)
+assert_contains "$output" "SSH_KEY=${HOME}/.ssh/id_deploy" "ssh_key from yml when no override (~ expanded)"
+
+# ssh_key: CP_SSH_KEY_OVERRIDE (env) wins over yml
+output=$(bash -c "
+export CP_SSH_KEY_OVERRIDE='/etc/wds-ci/id_ansible'
+source \"\${BASH_LIBRARY_PATH:-\${HOME}/.local/lib/bash-library}/lib-loader.sh\"
+source '${REPO_DIR}/lib/config.sh'
+config_load_env 'dev'
+echo \"SSH_KEY=\${CP_SSH_KEY}\"
+" 2>&1)
+assert_contains "$output" "SSH_KEY=/etc/wds-ci/id_ansible" "CP_SSH_KEY_OVERRIDE wins over yml ssh_key"
+
+# ssh_key: a ~ in the override is still expanded
+output=$(bash -c "
+export CP_SSH_KEY_OVERRIDE='~/ci/id_ansible'
+source \"\${BASH_LIBRARY_PATH:-\${HOME}/.local/lib/bash-library}/lib-loader.sh\"
+source '${REPO_DIR}/lib/config.sh'
+config_load_env 'dev'
+echo \"SSH_KEY=\${CP_SSH_KEY}\"
+" 2>&1)
+assert_contains "$output" "SSH_KEY=${HOME}/ci/id_ansible" "~ in CP_SSH_KEY_OVERRIDE is expanded"
 echo ""
 
 # ─── 9. Config parser: load component ────────────────────

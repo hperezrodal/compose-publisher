@@ -128,7 +128,7 @@ Options:
 |-------|----------|---------|-------------|
 | `host` | yes | — | VPS IP or hostname |
 | `user` | no | `root` | SSH user |
-| `ssh_key` | yes | — | Path to SSH private key |
+| `ssh_key` | yes | — | Path to SSH private key (`~` expanded). Overridable at runtime by the `CP_SSH_KEY_OVERRIDE` env var — for CI runners where the key path differs from a dev laptop |
 | `branch` | yes | — | Git branch to build from |
 | `env_file` | no | — | Local path to .env file |
 | `compose_files` | no | — | List of docker-compose files |

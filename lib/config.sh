@@ -57,6 +57,11 @@ config_load_env() {
     # Compose files as newline-separated list
     CP_COMPOSE_FILES=$(_cp_yq ".environments.${env}.compose_files[]")
 
+    # Portability override: a CI runner legitimately has the deploy
+    # key at a different absolute path than a dev laptop. CP_SSH_KEY_OVERRIDE
+    # (env) wins over the config value. Unset ⇒ unchanged behavior.
+    [[ -n "${CP_SSH_KEY_OVERRIDE:-}" ]] && CP_SSH_KEY="${CP_SSH_KEY_OVERRIDE}"
+
     # Expand ~ in ssh_key (local path)
     CP_SSH_KEY="${CP_SSH_KEY/#\~/$HOME}"
 
