@@ -73,6 +73,13 @@ COPY . .
 # Uncomment the following line in case you want to disable telemetry during the build.
 # ENV NEXT_TELEMETRY_DISABLED=1
 
+# Public API URL — NEXT_PUBLIC_* se inlinea en build time (next build), no
+# alcanza con runtime env. Se pasa como build arg (compose-publisher
+# components.<x>.args.NEXT_PUBLIC_API_URL). Vacío = no-op (backward compat:
+# consumidores que no lo pasan no cambian).
+ARG NEXT_PUBLIC_API_URL=""
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+
 RUN \
   if [ -f yarn.lock ]; then yarn run build; \
   elif [ -f package-lock.json ]; then npm run build; \
