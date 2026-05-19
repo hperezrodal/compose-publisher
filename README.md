@@ -172,6 +172,17 @@ components:
 
 Paths (anything with `/` or `.`) keep the previous behavior unchanged.
 
+**Built-in templates:**
+
+| Name | For | Stages | Output |
+|---|---|---|---|
+| `nextjs` | Next.js (standalone) apps | git → deps → builder → runner (node) | `node server.js` on :3000, healthcheck via node http GET / |
+| `nestjs` | NestJS / Node API services | git → deps → builder → prod-deps → runner (node) | `node dist/main.js` on `$APP_PORT` (default 3000), non-root user 1001 |
+| `react-nginx` | React/Vite/Parcel SPAs (`npm run build`) | git → builder (node) → runner (nginx:alpine) | static assets in `/usr/share/nginx/html`; optional `nginx.conf` at repo root overrides default conf |
+| `static-nginx` | Pre-built static assets (no build step) | git → runner (nginx:alpine) | whole context to `/usr/share/nginx/html`; optional `nginx.conf` at repo root |
+
+All templates capture `git rev-parse HEAD` into `build_commit.txt` and emit `BUILD_DATETIME` / `BUILD_COMMIT` for the runtime (consumer entrypoints can `source /etc/profile.d/build_info.sh` or read `/etc/build_info`). Build args common to web stacks (`NEXT_PUBLIC_API_URL`, `REACT_APP_API_URL`, `VITE_API_URL`) are accepted as no-op when empty — pass them via `components.<x>.args` when needed.
+
 ### Deploy path behavior
 
 The `deploy` command places files at `{deploy_path}/{stack}/` on the VPS:
