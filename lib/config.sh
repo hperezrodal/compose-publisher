@@ -63,6 +63,17 @@ config_load_env() {
     # NOTE: CP_DEPLOY_PATH keeps ~ as-is — it's used in remote SSH commands
     # where the remote shell expands ~. Do NOT expand locally.
 
+    # ── Lifecycle: notifier + wait-for-healthy (env-level) ──
+    # All optional; absent ⇒ feature is a no-op (backward compatible).
+    CP_NOTIFY_RUN=$(_cp_yq ".environments.${env}.notify.run")
+    CP_NOTIFY_ON=$(_cp_yq ".environments.${env}.notify.on[]" | tr '\n' ' ')
+    CP_NOTIFY_ON="${CP_NOTIFY_ON:-success failed aborted}"
+    CP_WAIT_HEALTHY=$(_cp_yq ".environments.${env}.wait_healthy")
+    CP_WAIT_HEALTHY="${CP_WAIT_HEALTHY:-auto}"
+    CP_HEALTH_TIMEOUT=$(_cp_yq ".environments.${env}.health_timeout")
+    CP_HEALTH_TIMEOUT="${CP_HEALTH_TIMEOUT:-150}"
+    CP_ENV="$env"
+
     # Validate required fields
     lib_validate_params \
         "host" "$CP_HOST" \
@@ -70,6 +81,7 @@ config_load_env() {
         "branch" "$CP_BRANCH"
 
     export CP_HOST CP_USER CP_SSH_KEY CP_BRANCH CP_ENV_FILE CP_DEPLOY_PATH CP_COMPOSE_FILES CP_REGISTRY_PORT
+    export CP_NOTIFY_RUN CP_NOTIFY_ON CP_WAIT_HEALTHY CP_HEALTH_TIMEOUT CP_ENV
 }
 
 # ─── Load component config ────────────────────────────────
@@ -137,11 +149,48 @@ config_load_component() {
     CP_PLATFORM=$(_cp_yq ".components.${component}.platform")
     CP_PLATFORM="${CP_PLATFORM:-linux/amd64}"
 
+    # ── Lifecycle hooks (component-level) ──
+    # pre_deploy / post_deploy: { run, where: runner|host, timeout }.
+    # All optional; absent run ⇒ that hook is skipped (backward compatible).
+    CP_PRE_RUN=$(_cp_yq ".components.${component}.pre_deploy.run")
+    CP_PRE_WHERE=$(_cp_yq ".components.${component}.pre_deploy.where")
+    CP_PRE_WHERE="${CP_PRE_WHERE:-runner}"
+    CP_PRE_TIMEOUT=$(_cp_yq ".components.${component}.pre_deploy.timeout")
+    CP_PRE_TIMEOUT="${CP_PRE_TIMEOUT:-300}"
+    CP_POST_RUN=$(_cp_yq ".components.${component}.post_deploy.run")
+    CP_POST_WHERE=$(_cp_yq ".components.${component}.post_deploy.where")
+    CP_POST_WHERE="${CP_POST_WHERE:-runner}"
+    CP_POST_TIMEOUT=$(_cp_yq ".components.${component}.post_deploy.timeout")
+    CP_POST_TIMEOUT="${CP_POST_TIMEOUT:-300}"
+    CP_COMPONENT="$component"
+
     lib_validate_params \
         "source" "$CP_SOURCE" \
         "compose_service" "$CP_COMPOSE_SERVICE"
 
     export CP_SOURCE CP_DOCKERFILE CP_CONTEXT CP_TARGET CP_COMPOSE_SERVICE CP_IMAGE_NAME CP_STACK CP_PLATFORM
+    export CP_PRE_RUN CP_PRE_WHERE CP_PRE_TIMEOUT CP_POST_RUN CP_POST_WHERE CP_POST_TIMEOUT CP_COMPONENT
+}
+
+# ─── Merged hook env (env-level base + component override) ──
+# Usage: config_hook_env_kv <env> <component>
+# Emits KEY=VALUE lines (component keys win on conflict). D3.
+config_hook_env_kv() {
+    local env="$1" component="$2" key val
+    {
+        _cp_yq ".environments.${env}.hook_env // {} | to_entries[] | .key" 2>/dev/null \
+          | while IFS= read -r key; do
+                [[ -z "$key" ]] && continue
+                val=$(_cp_yq ".environments.${env}.hook_env.\"${key}\"")
+                printf '%s=%s\n' "$key" "$val"
+            done
+        _cp_yq ".components.${component}.hook_env // {} | to_entries[] | .key" 2>/dev/null \
+          | while IFS= read -r key; do
+                [[ -z "$key" ]] && continue
+                val=$(_cp_yq ".components.${component}.hook_env.\"${key}\"")
+                printf '%s=%s\n' "$key" "$val"
+            done
+    }
 }
 
 # ─── Resolve environment from branch ──────────────────────

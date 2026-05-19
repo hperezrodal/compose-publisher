@@ -59,24 +59,85 @@ cp_deploy() {
     lib_log_header_done "deploy ${component}"
 }
 
+# ─── Lifecycle finalizer ───────────────────────────────────
+# Non-blocking notifier + retained-clone cleanup. Never changes the
+# exit code (the caller returns/propagates it).
+_cp_finalize() {
+    local status="$1" stage="$2" code="$3" start_ts="$4"
+    local dur=$(( $(date +%s) - start_ts ))
+    cp_notify "$status" "$stage" "$code" "$dur" || true
+    _cp_cleanup_clone || true
+}
+
+# ─── Full deploy pipeline for one component ────────────────
+# Usage: cp_pipeline_deploy <component> <env>
+# Order: pre_deploy → build → transfer → up → wait-healthy → post_deploy
+# Exit codes: 8 pre-abort, 9 post-fail, 10 health-timeout; 2/3/4/5 from
+# build/transfer/deploy. The notifier finalizer fires on every path.
+# Backward compatible: no hooks/notify ⇒ identical to the old
+# build→transfer→deploy sequence (plus the unchanged clone cleanup).
+cp_pipeline_deploy() {
+    local component="$1" env="$2" rc=0
+    local start_ts
+    start_ts=$(date +%s)
+
+    # Load config early so hooks/notify are known before build (and so
+    # build.sh can decide whether to retain the clone).
+    config_load_env "$env"
+    config_load_component "$component"
+
+    # 1. pre_deploy — before any mutation; hard abort on failure (D13)
+    rc=0; cp_hook_run pre || rc=$?
+    if (( rc != 0 )); then
+        lib_log_error "pre_deploy failed — aborting deploy (nothing built/changed)"
+        _cp_finalize aborted pre 8 "$start_ts"
+        return 8
+    fi
+
+    # 2. build → transfer → up
+    rc=0; cp_build "$component" "$env" || rc=$?
+    if (( rc != 0 )); then _cp_finalize failed build "$rc" "$start_ts"; return "$rc"; fi
+    rc=0; cp_transfer || rc=$?
+    if (( rc != 0 )); then _cp_finalize failed transfer "$rc" "$start_ts"; return "$rc"; fi
+    rc=0; cp_deploy "$component" "$env" || rc=$?
+    if (( rc != 0 )); then _cp_finalize failed up "$rc" "$start_ts"; return "$rc"; fi
+
+    # 3. wait-for-healthy (D4)
+    rc=0; cp_wait_healthy || rc=$?
+    if (( rc != 0 )); then _cp_finalize failed health 10 "$start_ts"; return 10; fi
+
+    # 4. post_deploy — distinct exit code 9 (D5); no rollback here
+    rc=0; cp_hook_run post || rc=$?
+    if (( rc != 0 )); then
+        lib_log_error "post_deploy failed (deploy applied, gate failed)"
+        _cp_finalize failed post 9 "$start_ts"
+        return 9
+    fi
+
+    _cp_finalize success "" 0 "$start_ts"
+    return 0
+}
+
 # ─── Deploy all components ─────────────────────────────────
 # Usage: cp_deploy_all <env>
-# F-014: Note — stops on first error due to set -e. This is intentional for V1.
-# Future: wrap each component in subshell for error isolation.
+# Runs the full lifecycle per component; stops on the first failure and
+# propagates that component's exit code (SPEC §6).
 cp_deploy_all() {
     local env="$1"
 
     lib_log_header_starting "deploy --all (env: ${env})"
 
-    local components
+    local components rc
     components=$(config_list_components)
 
     while IFS= read -r component <&3; do
         [[ -z "$component" ]] && continue
         lib_log_info "Deploying component: ${component}"
-        cp_build "$component" "$env"
-        cp_transfer
-        cp_deploy "$component" "$env"
+        rc=0; cp_pipeline_deploy "$component" "$env" || rc=$?
+        if (( rc != 0 )); then
+            lib_log_error "deploy --all stopped at '${component}' (exit ${rc})"
+            return "$rc"
+        fi
     done 3<<< "$components"
 
     lib_log_header_done "deploy --all"

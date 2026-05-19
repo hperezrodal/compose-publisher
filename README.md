@@ -188,6 +188,66 @@ The `env push/pull` commands use `{deploy_path}/` directly (no stack suffix). To
 deploy_path: ~/deployment/apps
 ```
 
+### Deploy lifecycle hooks + notifier
+
+Optional. With none of these keys present, deploy behaves exactly as
+before (fully backward compatible).
+
+```yaml
+components:
+  web:
+    source: git@github.com:org/web.git
+    compose_service: web
+    post_deploy:                 # runs after the service is healthy
+      run: scripts/smoke.sh      # path; for where=runner, inside the source clone
+      where: runner              # runner (default) | host
+      timeout: 120               # seconds (default 300)
+    hook_env:                    # extra env for this component's hooks
+      SMOKE_PATHS: "/,/health"
+  db-app:
+    source: git@github.com:org/app.git
+    compose_service: app
+    pre_deploy:                  # runs BEFORE any build/transfer/up
+      run: scripts/backup-db.sh
+      where: host                # ssh to the env host; script may docker exec
+      timeout: 600
+
+environments:
+  prod:
+    # ...
+    hook_env:                    # base env injected into all hooks
+      SMOKE_BASE_URL: https://example.com
+    wait_healthy: auto           # auto (default: wait iff healthcheck) | true | false
+    health_timeout: 150          # seconds
+    notify:                      # outcome reporter (finalizer)
+      run: scripts/notify.sh     # generic command you provide
+      on: [success, failed, aborted]
+```
+
+Lifecycle order:
+
+```
+pre_deploy → build → transfer → up → wait-healthy → post_deploy → notify
+```
+
+- **`pre_deploy`** runs before any mutation. Failure aborts the deploy
+  (nothing built/changed) with exit code **8**.
+- **wait-healthy** waits for the recreated `compose_service` to be
+  Docker-healthy before `post_deploy` (no-op if it has no healthcheck);
+  timeout ⇒ exit **10**.
+- **`post_deploy`** runs after healthy; failure ⇒ exit **9** (distinct
+  from build/transfer/deploy 2/3/4/5, so CI can tell "deployed but
+  gate failed" from "deploy failed"). No automatic rollback.
+- **Hook interface (frozen):** input via env vars only — merged
+  `hook_env` (env-level + component override) plus `CP_COMPONENT`,
+  `CP_ENV`, `CP_BRANCH`, `CP_IMAGE`, `CP_TAG`, `CP_COMPOSE_SERVICE`,
+  `CP_HOST`, `CP_HOOK_PHASE`. Output via exit code (0 = pass).
+- **`notify`** is a finalizer: runs **always** with the terminal
+  status (`success|failed|aborted`), whatever stage failed. The
+  command receives `CP_STATUS`, `CP_FAILED_STAGE`, `CP_EXIT_CODE`,
+  `CP_DURATION_S` (+ the hook context/env). It is **non-blocking** —
+  a notifier failure never changes the exit code or stalls the deploy.
+
 ## How it works
 
 ```

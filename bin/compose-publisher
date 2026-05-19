@@ -47,6 +47,7 @@ source "${CP_LIB_DIR}/config.sh"
 source "${CP_LIB_DIR}/build.sh"
 source "${CP_LIB_DIR}/transfer.sh"
 source "${CP_LIB_DIR}/deploy.sh"
+source "${CP_LIB_DIR}/hooks.sh"
 source "${CP_LIB_DIR}/setup.sh"
 source "${CP_LIB_DIR}/env.sh"
 
@@ -328,9 +329,7 @@ cp_dispatch() {
             if [[ "$CP_ALL" == true ]]; then
                 cp_deploy_all "$CP_ENV"
             else
-                cp_build "$CP_COMPONENT" "$CP_ENV"
-                cp_transfer
-                cp_deploy "$CP_COMPONENT" "$CP_ENV"
+                cp_pipeline_deploy "$CP_COMPONENT" "$CP_ENV"
             fi
             ;;
         setup)
