@@ -48,12 +48,23 @@ cp_bg_push_stack() {
     if [[ -n "${CP_ENV_FILE:-}" && -f "$CP_ENV_FILE" ]]; then
         scp "${CP_SSH_OPTS[@]}" "$CP_ENV_FILE" "${CP_USER}@${CP_HOST}:${remote_dir}/.env" >/dev/null
     fi
-    local flags="" file
+    local flags="" file first_dir=""
     while IFS= read -r file; do
         [[ -z "$file" ]] && continue
+        [[ -z "$first_dir" ]] && first_dir="$(dirname "$file")"
         scp "${CP_SSH_OPTS[@]}" "$file" "${CP_USER}@${CP_HOST}:${remote_dir}/$(basename "$file")" >/dev/null
         flags+=" -f $(basename "$file")"
     done <<< "$CP_COMPOSE_FILES"
+    # Consumer-owned Traefik dynamic templates live next to the compose
+    # file (<composedir>/dynamic/*.tmpl). Ship them so cp_bg_flip can
+    # render them on the host. Versioned in the consumer repo.
+    if [[ -n "$first_dir" && -d "${first_dir}/dynamic" ]]; then
+        local t
+        for t in "${first_dir}/dynamic"/*; do
+            [[ -f "$t" ]] || continue
+            scp "${CP_SSH_OPTS[@]}" "$t" "${CP_USER}@${CP_HOST}:${remote_dir}/dynamic/$(basename "$t")" >/dev/null
+        done
+    fi
     echo "$flags"
 }
 
