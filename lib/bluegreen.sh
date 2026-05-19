@@ -20,7 +20,9 @@ cp_bg_state_read() {
 }
 cp_bg_state_write() {
     local color="$1" f; f="$(_cp_bg_state_file)"
-    _cp_bg_ssh "printf '%s' '${color}' > '${f}.tmp' && mv -f '${f}.tmp' '${f}'"
+    # Paths unquoted so the remote shell expands ~ (CP_DEPLOY_PATH keeps
+    # ~ as-is, like cp_deploy). Deploy paths have no spaces.
+    _cp_bg_ssh "printf '%s' '${color}' > ${f}.tmp && mv -f ${f}.tmp ${f}"
 }
 
 # Resolve active/target colors. Exports CP_BG_ACTIVE, CP_BG_TARGET,
@@ -103,8 +105,8 @@ cp_bg_smoke_idle() {
 cp_bg_flip() {
     local color="$1" svc="${CP_COMPOSE_SERVICE}-$1"
     local tmpl df; tmpl="$(_cp_bg_dynamic_tmpl)"; df="$(_cp_bg_dynamic_file)"
-    _cp_bg_ssh "test -f '${tmpl}'" || { lib_log_error "blue/green: missing dynamic template ${tmpl}"; return 1; }
-    _cp_bg_ssh "sed 's/__CP_ACTIVE_SERVICE__/${svc}/g' '${tmpl}' > '${df}.tmp' && mv -f '${df}.tmp' '${df}'" || return 1
+    _cp_bg_ssh "test -f ${tmpl}" || { lib_log_error "blue/green: missing dynamic template ${tmpl}"; return 1; }
+    _cp_bg_ssh "sed 's/__CP_ACTIVE_SERVICE__/${svc}/g' ${tmpl} > ${df}.tmp && mv -f ${df}.tmp ${df}" || return 1
     cp_bg_state_write "$color" || return 1
     lib_log_success "blue/green: flipped ${CP_COMPOSE_SERVICE} → ${color}"
 }
