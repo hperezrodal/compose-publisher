@@ -120,6 +120,14 @@ cp_bg_retire() {
     _cp_bg_ssh "cd ${rd} && docker compose ${flags} rm -fs ${svc}" || true
 }
 
+# Bootstrap only (D26): the pre-blue/green container was named exactly
+# CP_COMPOSE_SERVICE (no color suffix). Remove it so its stale
+# docker-provider router stops conflicting with the new file router.
+cp_bg_retire_recreate() {
+    _cp_bg_ssh "docker rm -f ${CP_COMPOSE_SERVICE} >/dev/null 2>&1 || true"
+    lib_log_info "blue/green: retired pre-existing recreate container ${CP_COMPOSE_SERVICE} (if any)"
+}
+
 # ─── Manual kill-switch (bin: flip-back) ──────────────────
 cp_bg_flip_back() {
     cp_bg_resolve

@@ -174,10 +174,13 @@ cp_pipeline_deploy_bg() {
         _cp_finalize failed flip 11 "$start_ts"; return 11
     fi
 
-    # 7. soak + retire old color (skip on bootstrap — nothing to retire)
+    # 7. soak + retire old color; on bootstrap retire the pre-existing
+    #    recreate container so its stale router stops conflicting (D26).
     if (( CP_BG_BOOTSTRAP == 0 )); then
         cp_bg_soak
         cp_bg_retire "$CP_BG_ACTIVE"
+    else
+        cp_bg_retire_recreate
     fi
 
     _cp_finalize success "flip:${CP_BG_TARGET}" 0 "$start_ts"

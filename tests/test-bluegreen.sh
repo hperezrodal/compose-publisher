@@ -51,6 +51,7 @@ run_case() {
         cp_bg_flip(){ echo "STAGE:flip:$1"; return ${MOCK_FLIP:-0}; }
         cp_bg_soak(){ echo "STAGE:soak"; }
         cp_bg_retire(){ echo "STAGE:retire:$1"; }
+        cp_bg_retire_recreate(){ echo "STAGE:retire-recreate"; }
         CP_COMPOSE_SERVICE=web; CP_BG_SOAK=0; CP_BG_RETIRE=true
         '"$1"'
     ' 2>&1
@@ -72,6 +73,7 @@ assert_contains "$out" "STAGE:smoke:green"   "smokes green pre-flip"
 assert_contains "$out" "STAGE:flip:green"    "flips to green"
 assert_contains "$out" "STAGE:soak"          "soak (non-bootstrap)"
 assert_contains "$out" "STAGE:retire:blue"   "retires old blue"
+refute_contains "$out" "STAGE:retire-recreate" "normal path: no recreate-container retire"
 assert_contains "$out" "NOTIFY=success/flip:green/0" "notify success/flip:green"
 assert_contains "$out" "RC=0"                "success rc 0"
 
@@ -80,7 +82,8 @@ out=$(run_case 'MOCK_STATE="" CP_STRATEGY=blue-green cp_pipeline_deploy_bg web d
 assert_contains "$out" "STAGE:up:blue"   "bootstrap brings up blue"
 assert_contains "$out" "STAGE:flip:blue" "bootstrap points router at blue"
 refute_contains "$out" "STAGE:soak"      "bootstrap: no soak"
-refute_contains "$out" "STAGE:retire"    "bootstrap: nothing to retire"
+refute_contains "$out" "STAGE:retire:"   "bootstrap: no old-color retire"
+assert_contains "$out" "STAGE:retire-recreate" "bootstrap retires pre-existing recreate container (D26)"
 assert_contains "$out" "RC=0"            "bootstrap rc 0"
 
 echo "4. GUARANTEE: green health fails → NO flip, exit 11"
