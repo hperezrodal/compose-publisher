@@ -14,6 +14,15 @@ else
     CP_LIB_DIR="/usr/local/lib/compose-publisher"
 fi
 
+# Built-in templates dir (reusable Dockerfile/service templates shipped
+# with the tool). Repo mode: ../templates. Installed mode: share dir.
+if [[ -d "${CP_SCRIPT_DIR}/../templates" ]]; then
+    CP_TEMPLATES_DIR="${CP_SCRIPT_DIR}/../templates"
+else
+    CP_TEMPLATES_DIR="/usr/local/share/compose-publisher/templates"
+fi
+export CP_TEMPLATES_DIR
+
 # ─── Pre-flight: bash-library ──────────────────────────────
 if [[ -n "${BASH_LIBRARY_PATH:-}" && -f "${BASH_LIBRARY_PATH}/lib-loader.sh" ]]; then
     source "${BASH_LIBRARY_PATH}/lib-loader.sh"

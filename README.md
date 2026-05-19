@@ -139,13 +139,38 @@ Options:
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `source` | yes | — | Git URL or local path (`./dir`) |
-| `dockerfile` | no | `Dockerfile` | Dockerfile path (relative to source) |
+| `dockerfile` | no | `Dockerfile` | Dockerfile path (relative to source), **or** a bare template name (see below) |
 | `context` | no | `.` | Docker build context |
 | `target` | no | — | Multi-stage build target |
 | `compose_service` | yes | — | Service name in docker-compose.yml |
 | `stack` | no | `default` | Stack identifier. Deploy creates `{deploy_path}/{stack}/` on VPS |
 | `platform` | no | `linux/amd64` | Docker build platform |
 | `args` | no | — | Build args (key-value map) |
+
+### Dockerfile templates
+
+`dockerfile:` accepts either a path or a **bare template name** (no `/`,
+no `.`, not the literal `Dockerfile`). A template name is resolved in
+order:
+
+1. **Consumer override** — `<config_dir>/dockerfiles/<name>.Dockerfile`
+   (next to your `compose-publisher.yml`)
+2. **Built-in template** — `templates/dockerfiles/<name>.Dockerfile`
+   shipped with compose-publisher
+
+This lets reusable Dockerfiles live with the tool and be shared across
+projects, while a consumer can shadow one when it needs something
+specific. The build context stays the app source repo.
+
+```yaml
+components:
+  web:
+    source: git@github.com:acme/web.git
+    dockerfile: nextjs        # built-in, unless overridden locally
+    compose_service: web
+```
+
+Paths (anything with `/` or `.`) keep the previous behavior unchanged.
 
 ### Deploy path behavior
 
