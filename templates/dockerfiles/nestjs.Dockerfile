@@ -29,23 +29,30 @@ LABEL maintainer="hperezrodal <hperezrodal@gmail.com>"
 LABEL description="Template Dockerfile for NestJS API services"
 LABEL version="1.0.0"
 # Optional private-registry auth (e.g. Nexus, GitHub Packages, a
-# scoped private npm registry). Consumers pass two args:
-#   args:
-#     NPM_TOKEN: ${NPM_TOKEN}                                      # secret
-#     NPM_REGISTRY_HOST: nexus.example.com/repository/npm-hosted/  # public
-# Empty defaults — public-package projects are unaffected. When both
-# are set we write a minimal ~/.npmrc with the host-scoped auth line,
-# leaving any consumer-supplied ./.npmrc (scope -> registry rules)
-# untouched. npm merges them at lookup time. NOTE: build args land in
-# image history; the image is built on the CI runner and pushed to a
-# host-local registry on the target (not publicly distributed). For
-# broad-distribution / prod hardening switch to BuildKit secrets.
-ARG NPM_TOKEN=""
+# scoped private npm registry). NPM_REGISTRY_HOST is just a hostname
+# path (non-sensitive) and stays a build ARG. NPM_TOKEN is sensitive —
+# passed via BuildKit `--mount=type=secret,id=npm_token`. The secret
+# never lands in image layer history nor in BuildKit's log output (an
+# ARG would; observed leaking into journald in CI runners).
+#
+# Consumer wiring (in the consumer's compose-publisher.yml):
+#   components:
+#     <name>:
+#       args:
+#         NPM_REGISTRY_HOST: nexus.example.com/repository/npm-hosted/
+#       secrets:
+#         npm_token: NPM_TOKEN
+#
+# Empty/absent secret ⇒ no .npmrc auth written (public-package
+# projects are unaffected).
 ARG NPM_REGISTRY_HOST=""
 COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* .npmrc* ./
-RUN if [ -n "$NPM_TOKEN" ] && [ -n "$NPM_REGISTRY_HOST" ]; then \
+RUN --mount=type=secret,id=npm_token \
+    NPM_TOKEN="$( [ -s /run/secrets/npm_token ] && cat /run/secrets/npm_token || echo '' )"; \
+    if [ -n "$NPM_TOKEN" ] && [ -n "$NPM_REGISTRY_HOST" ]; then \
         printf '//%s:_authToken=%s\n' "$NPM_REGISTRY_HOST" "$NPM_TOKEN" > /root/.npmrc; \
     fi && \
+    unset NPM_TOKEN && \
   ( if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
     elif [ -f package-lock.json ]; then npm ci --include=optional; \
     elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i --frozen-lockfile; \
@@ -71,12 +78,14 @@ FROM ${BASE_IMAGE} AS prod-deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 # Same private-registry auth knobs as deps. See comments above.
-ARG NPM_TOKEN=""
 ARG NPM_REGISTRY_HOST=""
 COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* .npmrc* ./
-RUN if [ -n "$NPM_TOKEN" ] && [ -n "$NPM_REGISTRY_HOST" ]; then \
+RUN --mount=type=secret,id=npm_token \
+    NPM_TOKEN="$( [ -s /run/secrets/npm_token ] && cat /run/secrets/npm_token || echo '' )"; \
+    if [ -n "$NPM_TOKEN" ] && [ -n "$NPM_REGISTRY_HOST" ]; then \
         printf '//%s:_authToken=%s\n' "$NPM_REGISTRY_HOST" "$NPM_TOKEN" > /root/.npmrc; \
     fi && \
+    unset NPM_TOKEN && \
   ( if [ -f yarn.lock ]; then yarn --frozen-lockfile --production; \
     elif [ -f package-lock.json ]; then npm ci --omit=dev --include=optional; \
     elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i --frozen-lockfile --prod; \
