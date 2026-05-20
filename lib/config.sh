@@ -105,7 +105,13 @@ config_load_component() {
         exit 1
     fi
 
-    CP_SOURCE=$(_cp_yq ".components.${component}.source")
+    # CP_SOURCE: env override wins over yml. Useful for CI/runners that
+    # pre-stage a patched source tree (e.g. vendored tarballs when a private
+    # registry is unreachable) — they export an absolute path before invoking
+    # compose-publisher, and build.sh's local-source branch picks it up
+    # without going to git. When no env override is set, the yml value (a
+    # git URL or a local path) is used unchanged.
+    CP_SOURCE="${CP_SOURCE:-$(_cp_yq ".components.${component}.source")}"
     CP_DOCKERFILE=$(_cp_yq ".components.${component}.dockerfile")
     CP_DOCKERFILE="${CP_DOCKERFILE:-Dockerfile}"
 
