@@ -50,6 +50,13 @@ ENV REACT_APP_API_URL=${REACT_APP_API_URL}
 ARG VITE_API_URL=""
 ENV VITE_API_URL=${VITE_API_URL}
 
+# Webpack/CRA builds blow past Node's small-host default heap (~512 MB on
+# <2 GB hosts) and OOM. Bump the old-space size for the build step. Override
+# via components.<x>.args.NODE_BUILD_MEMORY if the runner has more headroom
+# or a smaller bundle needs less.
+ARG NODE_BUILD_MEMORY=1536
+ENV NODE_OPTIONS="--max-old-space-size=${NODE_BUILD_MEMORY}"
+
 COPY . .
 RUN \
   if [ -f yarn.lock ]; then yarn run build; \
