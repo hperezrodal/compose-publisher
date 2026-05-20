@@ -28,21 +28,23 @@ _cp_hook_envkv() {
 # ─── Does a where=runner hook need the build clone kept? ───
 # Used by lib/build.sh to decide whether to defer clone cleanup (D2).
 _cp_runner_hook_needs_clone() {
-    [[ -n "${CP_PRE_RUN:-}"  && "${CP_PRE_WHERE:-runner}"  == "runner" ]] && return 0
-    [[ -n "${CP_POST_RUN:-}" && "${CP_POST_WHERE:-runner}" == "runner" ]] && return 0
+    [[ -n "${CP_PRE_RUN:-}"   && "${CP_PRE_WHERE:-runner}"   == "runner" ]] && return 0
+    [[ -n "${CP_PREUP_RUN:-}" && "${CP_PREUP_WHERE:-runner}" == "runner" ]] && return 0
+    [[ -n "${CP_POST_RUN:-}"  && "${CP_POST_WHERE:-runner}"  == "runner" ]] && return 0
     return 1
 }
 
 # ─── Run a lifecycle hook ──────────────────────────────────
-# Usage: cp_hook_run <pre|post>
+# Usage: cp_hook_run <pre|pre_up|post>
 # Returns: 0 ok / no hook; non-zero = hook failed (caller maps to exit
-# code 8 for pre, 9 for post).
+# code 8 for pre, 11 for pre_up, 9 for post).
 cp_hook_run() {
     local phase="$1"
     local run where timeout
     case "$phase" in
-        pre)  run="${CP_PRE_RUN:-}";  where="${CP_PRE_WHERE:-runner}";  timeout="${CP_PRE_TIMEOUT:-300}" ;;
-        post) run="${CP_POST_RUN:-}"; where="${CP_POST_WHERE:-runner}"; timeout="${CP_POST_TIMEOUT:-300}" ;;
+        pre)    run="${CP_PRE_RUN:-}";   where="${CP_PRE_WHERE:-runner}";   timeout="${CP_PRE_TIMEOUT:-300}" ;;
+        pre_up) run="${CP_PREUP_RUN:-}"; where="${CP_PREUP_WHERE:-runner}"; timeout="${CP_PREUP_TIMEOUT:-300}" ;;
+        post)   run="${CP_POST_RUN:-}";  where="${CP_POST_WHERE:-runner}";  timeout="${CP_POST_TIMEOUT:-300}" ;;
         *) lib_log_error "cp_hook_run: bad phase '${phase}'"; return 2 ;;
     esac
 

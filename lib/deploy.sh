@@ -71,11 +71,11 @@ _cp_finalize() {
 
 # ─── Full deploy pipeline for one component ────────────────
 # Usage: cp_pipeline_deploy <component> <env>
-# Order: pre_deploy → build → transfer → up → wait-healthy → post_deploy
-# Exit codes: 8 pre-abort, 9 post-fail, 10 health-timeout; 2/3/4/5 from
-# build/transfer/deploy. The notifier finalizer fires on every path.
-# Backward compatible: no hooks/notify ⇒ identical to the old
-# build→transfer→deploy sequence (plus the unchanged clone cleanup).
+# Order: pre_deploy → build → transfer → pre_up → up → wait-healthy → post_deploy
+# Exit codes: 8 pre-abort, 9 post-fail, 10 health-timeout, 11 pre_up-abort;
+# 2/3/4/5 from build/transfer/deploy. The notifier finalizer fires on
+# every path. Backward compatible: no hooks/notify ⇒ identical to the
+# old build→transfer→deploy sequence (plus the unchanged clone cleanup).
 cp_pipeline_deploy() {
     local component="$1" env="$2" rc=0
     local start_ts
@@ -101,11 +101,21 @@ cp_pipeline_deploy() {
         return 8
     fi
 
-    # 2. build → transfer → up
+    # 2. build → transfer → pre_up → up
     rc=0; cp_build "$component" "$env" || rc=$?
     if (( rc != 0 )); then _cp_finalize failed build "$rc" "$start_ts"; return "$rc"; fi
     rc=0; cp_transfer || rc=$?
     if (( rc != 0 )); then _cp_finalize failed transfer "$rc" "$start_ts"; return "$rc"; fi
+    # pre_up: new image is on the host; the real container hasn't been
+    # touched yet. Sweet spot for migration pre-flight / schema dry-run.
+    # A non-zero exit here aborts the deploy with the running service
+    # untouched (no rollback needed).
+    rc=0; cp_hook_run pre_up || rc=$?
+    if (( rc != 0 )); then
+        lib_log_error "pre_up failed — aborting deploy (image transferred but service untouched)"
+        _cp_finalize aborted pre_up 11 "$start_ts"
+        return 11
+    fi
     rc=0; cp_deploy "$component" "$env" || rc=$?
     if (( rc != 0 )); then _cp_finalize failed up "$rc" "$start_ts"; return "$rc"; fi
 

@@ -161,13 +161,27 @@ config_load_component() {
     CP_PLATFORM="${CP_PLATFORM:-linux/amd64}"
 
     # ── Lifecycle hooks (component-level) ──
-    # pre_deploy / post_deploy: { run, where: runner|host, timeout }.
+    # pre_deploy / pre_up / post_deploy: { run, where: runner|host, timeout }.
     # All optional; absent run ⇒ that hook is skipped (backward compatible).
+    #
+    # pre_deploy runs FIRST, before any build/transfer (legacy container
+    # eviction, host prep, etc.).
+    # pre_up runs AFTER the new image is built and transferred to the
+    # host but BEFORE `docker compose up` brings the real container.
+    # Useful for migration pre-flight, schema validation, dry-run smoke
+    # against an isolated DB clone — anything that needs the actual new
+    # image but must not touch live state.
+    # post_deploy runs AFTER deploy + wait-for-healthy.
     CP_PRE_RUN=$(_cp_yq ".components.${component}.pre_deploy.run")
     CP_PRE_WHERE=$(_cp_yq ".components.${component}.pre_deploy.where")
     CP_PRE_WHERE="${CP_PRE_WHERE:-runner}"
     CP_PRE_TIMEOUT=$(_cp_yq ".components.${component}.pre_deploy.timeout")
     CP_PRE_TIMEOUT="${CP_PRE_TIMEOUT:-300}"
+    CP_PREUP_RUN=$(_cp_yq ".components.${component}.pre_up.run")
+    CP_PREUP_WHERE=$(_cp_yq ".components.${component}.pre_up.where")
+    CP_PREUP_WHERE="${CP_PREUP_WHERE:-runner}"
+    CP_PREUP_TIMEOUT=$(_cp_yq ".components.${component}.pre_up.timeout")
+    CP_PREUP_TIMEOUT="${CP_PREUP_TIMEOUT:-300}"
     CP_POST_RUN=$(_cp_yq ".components.${component}.post_deploy.run")
     CP_POST_WHERE=$(_cp_yq ".components.${component}.post_deploy.where")
     CP_POST_WHERE="${CP_POST_WHERE:-runner}"
@@ -193,6 +207,7 @@ config_load_component() {
 
     export CP_SOURCE CP_DOCKERFILE CP_CONTEXT CP_TARGET CP_COMPOSE_SERVICE CP_IMAGE_NAME CP_STACK CP_PLATFORM
     export CP_PRE_RUN CP_PRE_WHERE CP_PRE_TIMEOUT CP_POST_RUN CP_POST_WHERE CP_POST_TIMEOUT CP_COMPONENT
+    export CP_PREUP_RUN CP_PREUP_WHERE CP_PREUP_TIMEOUT
     export CP_STRATEGY CP_BG_SOAK CP_BG_RETIRE CP_BG_PORT
 }
 
