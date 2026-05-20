@@ -96,6 +96,27 @@ cp_build() {
         done <<< "$arg_keys"
     fi
 
+    # BuildKit secrets — values that must NOT leak into image history or
+    # build logs (private registry tokens, deploy keys, etc.). YAML
+    # surface is a map of <secret-id>: <ENV_VAR_NAME>, e.g.:
+    #   components:
+    #     wds-service:
+    #       secrets:
+    #         npm_token: NPM_TOKEN
+    # Inside the Dockerfile, mount per RUN as:
+    #   RUN --mount=type=secret,id=npm_token sh -c '... $(cat /run/secrets/npm_token) ...'
+    # Empty env var ⇒ pass-through (BuildKit emits an empty file).
+    local secret_ids
+    secret_ids=$(_cp_yq ".components.${component}.secrets | keys | .[]" 2>/dev/null)
+    if [[ -n "$secret_ids" ]]; then
+        while IFS= read -r sid; do
+            local envvar
+            envvar=$(_cp_yq ".components.${component}.secrets.${sid}")
+            build_cmd+=(--secret "id=${sid},env=${envvar}")
+            lib_log_info "Build secret: ${sid} (from env ${envvar})"
+        done <<< "$secret_ids"
+    fi
+
     # Dockerfile and context
     build_cmd+=(-f "$CP_DOCKERFILE" "$CP_CONTEXT")
 
