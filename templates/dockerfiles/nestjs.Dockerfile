@@ -28,26 +28,30 @@ WORKDIR /app
 LABEL maintainer="hperezrodal <hperezrodal@gmail.com>"
 LABEL description="Template Dockerfile for NestJS API services"
 LABEL version="1.0.0"
-# Optional private-registry auth. Consumers pass NPM_TOKEN via
-# components.<x>.args.NPM_TOKEN: ${NPM_TOKEN} (envsubst from the
-# runner env). Empty by default — public-package projects are
-# unaffected. Exported under BOTH NPM_TOKEN and TOKEN to support
-# .npmrc files that reference either name (npm substitutes ${VAR}
-# in .npmrc from the process env). NOTE: build args end up in
-# image history; for prod hardening switch to BuildKit
-# `--mount=type=secret`. The image is built on the CI runner and
-# pushed to a host-local registry on the target — not publicly
-# distributed — so the layer-history exposure is contained.
+# Optional private-registry auth (e.g. Nexus, GitHub Packages, a
+# scoped private npm registry). Consumers pass two args:
+#   args:
+#     NPM_TOKEN: ${NPM_TOKEN}                                      # secret
+#     NPM_REGISTRY_HOST: nexus.example.com/repository/npm-hosted/  # public
+# Empty defaults — public-package projects are unaffected. When both
+# are set we write a minimal ~/.npmrc with the host-scoped auth line,
+# leaving any consumer-supplied ./.npmrc (scope -> registry rules)
+# untouched. npm merges them at lookup time. NOTE: build args land in
+# image history; the image is built on the CI runner and pushed to a
+# host-local registry on the target (not publicly distributed). For
+# broad-distribution / prod hardening switch to BuildKit secrets.
 ARG NPM_TOKEN=""
-ENV NPM_TOKEN=${NPM_TOKEN}
-ENV TOKEN=${NPM_TOKEN}
+ARG NPM_REGISTRY_HOST=""
 COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* .npmrc* ./
-RUN \
-  if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
-  elif [ -f package-lock.json ]; then npm ci --include=optional; \
-  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i --frozen-lockfile; \
-  else echo "Lockfile not found." && exit 1; \
-  fi
+RUN if [ -n "$NPM_TOKEN" ] && [ -n "$NPM_REGISTRY_HOST" ]; then \
+        printf '//%s:_authToken=%s\n' "$NPM_REGISTRY_HOST" "$NPM_TOKEN" > /root/.npmrc; \
+    fi && \
+  ( if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
+    elif [ -f package-lock.json ]; then npm ci --include=optional; \
+    elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i --frozen-lockfile; \
+    else echo "Lockfile not found." && exit 1; \
+    fi ) && \
+    rm -f /root/.npmrc
 
 # ── builder: produce dist/ ──
 FROM ${BASE_IMAGE} AS builder
@@ -66,17 +70,19 @@ RUN \
 FROM ${BASE_IMAGE} AS prod-deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
-# Same private-registry auth knob as the deps stage.
+# Same private-registry auth knobs as deps. See comments above.
 ARG NPM_TOKEN=""
-ENV NPM_TOKEN=${NPM_TOKEN}
-ENV TOKEN=${NPM_TOKEN}
+ARG NPM_REGISTRY_HOST=""
 COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* .npmrc* ./
-RUN \
-  if [ -f yarn.lock ]; then yarn --frozen-lockfile --production; \
-  elif [ -f package-lock.json ]; then npm ci --omit=dev --include=optional; \
-  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i --frozen-lockfile --prod; \
-  else echo "Lockfile not found." && exit 1; \
-  fi
+RUN if [ -n "$NPM_TOKEN" ] && [ -n "$NPM_REGISTRY_HOST" ]; then \
+        printf '//%s:_authToken=%s\n' "$NPM_REGISTRY_HOST" "$NPM_TOKEN" > /root/.npmrc; \
+    fi && \
+  ( if [ -f yarn.lock ]; then yarn --frozen-lockfile --production; \
+    elif [ -f package-lock.json ]; then npm ci --omit=dev --include=optional; \
+    elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i --frozen-lockfile --prod; \
+    else echo "Lockfile not found." && exit 1; \
+    fi ) && \
+    rm -f /root/.npmrc
 
 # ── runner: minimal runtime image ──
 FROM ${BASE_IMAGE} AS runner
