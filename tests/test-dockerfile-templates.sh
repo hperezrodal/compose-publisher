@@ -44,6 +44,12 @@ echo "5. static-nginx: no builder, single nginx stage"
 assert "! grep -q 'AS builder' '$TEMPLATES/static-nginx.Dockerfile'" "static-nginx: no builder stage"
 assert "grep -q '/usr/share/nginx/html' '$TEMPLATES/static-nginx.Dockerfile'" "static-nginx: copies to nginx html root"
 
+echo "5b. nextjs: the NEXT_PUBLIC_* build args reach next build"
+for v in NEXT_PUBLIC_API_URL NEXT_PUBLIC_SITE_URL; do
+    assert "grep -q '^ARG ${v}=' '$TEMPLATES/nextjs.Dockerfile'" "nextjs: declares ARG ${v}"
+    assert "grep -q '^ENV ${v}=' '$TEMPLATES/nextjs.Dockerfile'" "nextjs: exports ${v} to the build"
+done
+
 echo "6. Integration: config.sh resolves each name to its built-in"
 # Use top-level $HOME (not /tmp, not ~/.cache) so a snap-confined yq can
 # read the fixture — some yq snaps' home plug excludes hidden dirs.

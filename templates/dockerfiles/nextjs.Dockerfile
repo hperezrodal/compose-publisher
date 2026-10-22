@@ -80,6 +80,13 @@ COPY . .
 ARG NEXT_PUBLIC_API_URL=""
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
+# Public site URL (canonical, sitemap, Open Graph, and whether the build may be
+# indexed), same mechanism. Undeclared, a components.<x>.args entry for it was
+# dropped without a warning. Empty = no-op for consumers that do not read it;
+# a consumer that does must treat "" as unset (`||`, not `??`).
+ARG NEXT_PUBLIC_SITE_URL=""
+ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
+
 RUN \
   if [ -f yarn.lock ]; then yarn run build; \
   elif [ -f package-lock.json ]; then npm run build; \

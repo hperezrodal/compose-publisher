@@ -181,7 +181,7 @@ Paths (anything with `/` or `.`) keep the previous behavior unchanged.
 | `react-nginx` | React/Vite/Parcel SPAs (`npm run build`) | git → builder (node) → runner (nginx:alpine) | static assets in `/usr/share/nginx/html`; optional `nginx.conf` at repo root overrides default conf |
 | `static-nginx` | Pre-built static assets (no build step) | git → runner (nginx:alpine) | whole context to `/usr/share/nginx/html`; optional `nginx.conf` at repo root |
 
-All templates capture `git rev-parse HEAD` into `build_commit.txt` and emit `BUILD_DATETIME` / `BUILD_COMMIT` for the runtime (consumer entrypoints can `source /etc/profile.d/build_info.sh` or read `/etc/build_info`). Build args common to web stacks (`NEXT_PUBLIC_API_URL`, `REACT_APP_API_URL`, `VITE_API_URL`) are accepted as no-op when empty — pass them via `components.<x>.args` when needed.
+All templates capture `git rev-parse HEAD` into `build_commit.txt` and emit `BUILD_DATETIME` / `BUILD_COMMIT` for the runtime (consumer entrypoints can `source /etc/profile.d/build_info.sh` or read `/etc/build_info`). Build args common to web stacks (`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`, `REACT_APP_API_URL`, `VITE_API_URL`) are accepted as no-op when empty — pass them via `components.<x>.args` when needed. A build arg a template does not declare is dropped by `docker build` without an error, so a new `NEXT_PUBLIC_*` the app reads at build time has to be added to the template.
 
 ### Deploy path behavior
 
